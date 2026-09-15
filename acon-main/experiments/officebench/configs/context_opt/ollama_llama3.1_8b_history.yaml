@@ -1,0 +1,9 @@
+type: "history"
+model: "ollama/llama3.1:8b"
+compressor_type: "full"
+prompts:
+  prompt_system: "system_prompt"
+  prompt_history_user: "prompt_history"
+history_summarization_threshold: 4096
+preserve_last_k_turns: 1
+

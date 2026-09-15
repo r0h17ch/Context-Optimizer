@@ -118,6 +118,94 @@ USER:
 Marked the active task complete.
 
 
+
+----------------------------------------------
+
+For example, consider another task:
+
+My name is: {{ supervisor.first_name }} {{ supervisor.last_name }}. My personal email is {{ supervisor.email }} and phone number is {{ supervisor.phone_number }}.
+
+Task:
+
+Like all jazz songs on Spotify that have more than 10 likes.
+
+A:
+# Many Spotify write APIs (like, follow, etc.) need an access_token from login.
+# Step 1: Get my Spotify credentials from supervisor.
+account_info = apis.supervisor.show_account()
+print(account_info)
+
+
+USER:
+{"first_name": "Erica", "last_name": "Wilson", "username": "eri_powe", ...}
+
+
+A:
+# Step 2: Get my Spotify password.
+# Step 1: Get my Spotify password.
+passwords = apis.supervisor.show_account_passwords()
+spotify_pass = next(p["password"] for p in passwords if p["account_name"] == "spotify")
+print(spotify_pass)
+
+
+USER:
+dummy_spotify_pass
+
+
+A:
+# Step 3: Login to Spotify to get the access_token needed for write operations.
+login_result = apis.spotify.login(username="eri_powe", password=spotify_pass)
+# Step 2: Login to Spotify to get the access_token needed for write operations.
+# Note: The login API for most apps expects the user's email as the username. My email is provided in the task instructions.
+login_result = apis.spotify.login(username="{{ supervisor.email }}", password=spotify_pass)
+access_token = login_result["access_token"]
+print(access_token)
+
+
+USER:
+eyJ...token...
+
+
+A:
+# Step 4: Search for jazz songs (use page_limit=20 and iterate pages to get all results).
+# Step 3: Search for jazz songs (use page_limit=20 and iterate pages to get all results).
+all_songs = []
+page = 0
+while True:
+    songs = apis.spotify.search_songs(query="jazz", page_index=page, page_limit=20)
+    if not songs:
+        break
+    all_songs.extend(songs)
+    page += 1
+print(f"Total jazz songs: {len(all_songs)}")
+
+
+USER:
+Total jazz songs: 15
+
+
+A:
+# Step 5: Filter songs with more than 10 likes and like each one.
+for song in all_songs:
+    if song["like_count"] > 10:
+        result = apis.spotify.like_song(song_id=song["song_id"], access_token=access_token)
+        print(f"Liked song {song['song_id']}: {result}")
+
+
+USER:
+Liked song 3: {"message": "Song liked successfully."}
+Liked song 7: {"message": "Song liked successfully."}
+
+
+A:
+# All qualifying songs liked. Mark task complete.
+apis.supervisor.complete_task()
+
+
+USER:
+Marked the active task complete.
+
+
 ----------------------------------------------
 
 USER:

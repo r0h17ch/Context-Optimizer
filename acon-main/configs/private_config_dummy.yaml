@@ -1,1 +1,6 @@
-openai_key: <YOUR_OPENAI_KEY_HERE>
+# OpenAI API Key (required only if running proprietary OpenAI models like gpt-4o, gpt-4.1)
+openai_key: "<YOUR_OPENAI_KEY_HERE>"
+
+# Ollama Configuration (for running local open-weights models like llama3.1:8b, qwen2.5:7b, etc.)
+# Default Ollama endpoint is http://localhost:11434/v1
+ollama_base_url: "http://localhost:11434/v1"

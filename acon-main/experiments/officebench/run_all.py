@@ -128,7 +128,8 @@ else:
     task_list = load_task_ids_from_split(args.split)
     print(f"Running all tasks from {args.split} split: {len(task_list)} tasks")
 
-output_root_dir = f'./outputs/{args.model_name.replace("/","_")}_{args.tag}/{args.split}/'
+safe_model_tag = args.model_name.replace("/", "_").replace(":", "_")
+output_root_dir = f'./outputs/{safe_model_tag}_{args.tag}/{args.split}/'
 
 start_time = time.time()
 successful_tasks = []
@@ -149,7 +150,7 @@ def _process_task(i: int, task: str):
         print(f'Running subtask {subtask}')
         task_config_file = f'{args.tasks_dir_name}/{task}/subtasks/{subtask}'
         subtask_name = subtask.split('.')[0]
-        output_folder = f'{args.tasks_dir_name}/{task}/outputs/{subtask_name}/{args.model_name}_{args.tag}'
+        output_folder = f'{args.tasks_dir_name}/{task}/outputs/{subtask_name}/{safe_model_tag}_{args.tag}'
         if os.path.exists(output_folder):
             print('Output folder exists, skipping')
             continue

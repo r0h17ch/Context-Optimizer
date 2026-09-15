@@ -125,7 +125,8 @@ def main_runner():
         use_workflow_memory=args.use_workflow_memory,
         co_config=co_config
     )
-    experiment_name = f'{args.model_name.replace("/","_")}_{args.tag}'
+    safe_model_tag = args.model_name.replace("/", "_").replace(":", "_")
+    experiment_name = f'{safe_model_tag}_{args.tag}'
 
     # Update config with command line arguments, avoiding conflicts
     exp_config.update({
@@ -155,8 +156,8 @@ def main_runner():
     is_gpt5 = 'gpt-5-chat' in args.model_name
     outputs_base = './outputs_gpt5' if is_gpt5 else './outputs'
     # Keep experiments directory consistent (do not divert for gpt-5-chat)
-    output_root_dir = f'{outputs_base}/{args.model_name.replace("/","_")}_{args.tag}/{args.split}/'
-    experiments_root_dir = f'./experiments/outputs/{args.model_name.replace("/","_")}_{args.tag}/'
+    output_root_dir = f'{outputs_base}/{safe_model_tag}_{args.tag}/{args.split}/'
+    experiments_root_dir = f'./experiments/outputs/{safe_model_tag}_{args.tag}/'
 
     if args.rerun_failed:
         summary_path = Path(output_root_dir, "experiment_summary.json")

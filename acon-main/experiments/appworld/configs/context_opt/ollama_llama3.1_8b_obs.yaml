@@ -1,0 +1,8 @@
+type: "obs"
+model: "ollama/llama3.1:8b"
+compressor_type: "full"
+prompts:
+  prompt_system: "system_prompt"
+  prompt_user: "prompt_user"
+obs_summarization_threshold: 1024
+

@@ -11,6 +11,7 @@ Classes:
 - Gemini: Google's Gemini API
 - vLLM: Local vLLM server interface
 - vLLMLocal: Direct local vLLM interface
+- OllamaModel: Local Ollama server interface via OpenAI-compatible endpoint
 
 The base class handles:
 - Logging configuration
@@ -118,6 +119,11 @@ def calculate_api_cost(model_name: str, input_tokens: int, output_tokens: int) -
     Returns:
         Total cost in USD
     """
+    # Local and Ollama models incur 0 API cost
+    local_keywords = ['ollama', 'llama', 'qwen', 'mistral', 'deepseek', 'phi', 'gemma', 'local', 'vllm']
+    if any(kw in model_name.lower() for kw in local_keywords):
+        return 0.0
+
     # Find matching model pricing
     pricing = None
     for model_key in MODEL_PRICING:
@@ -128,7 +134,7 @@ def calculate_api_cost(model_name: str, input_tokens: int, output_tokens: int) -
     if pricing is None:
         # Default to gpt-4o pricing if model not found
         logger.warning(f"No pricing found for model {model_name}, using gpt-4o pricing")
-        pricing = MODEL_PRICING['gpt-4o']
+        pricing = MODEL_PRICING.get('gpt-4o', {'input': 2.5, 'output': 10.0})
     
     # Calculate cost (pricing is per 1M tokens)
     input_cost = (input_tokens / 1_000_000) * pricing['input']
@@ -579,3 +585,76 @@ class vLLMLocal(BaseLLMModel):
         except Exception as e:
             print("Generation Error:", e)
             return "None"
+
+
+class OllamaModel(BaseLLMModel):
+    """
+    Ollama API client using OpenAI-compatible interface (/v1).
+    Works with local Ollama server running on http://localhost:11434/v1 by default.
+    """
+    def __init__(self, model_name, base_url=None, system_message=None, log_file=None, log_level=logging.INFO, temperature=0.0):
+        # Strip optional "ollama/" or "ollama:" prefix if present
+        clean_model_name = model_name
+        if clean_model_name.startswith("ollama/"):
+            clean_model_name = clean_model_name[len("ollama/"):]
+        elif clean_model_name.startswith("ollama:"):
+            clean_model_name = clean_model_name[len("ollama:"):]
+            
+        super().__init__(clean_model_name, system_message, log_file, log_level, temperature)
+        
+        if not base_url:
+            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        if not base_url.endswith("/v1"):
+            base_url = f"{base_url.rstrip('/')}/v1"
+            
+        self.base_url = base_url
+        self.client = OpenAI(
+            base_url=self.base_url,
+            api_key="ollama",  # Ollama ignores API key, but openai client requires a non-empty string
+        )
+        logger.info(f"Initialized OllamaModel with model={self.model_name} at base_url={self.base_url}")
+
+    def generate(self, prompt, max_tokens=2048, temperature=None, stop=None, seed=None, **kwargs):
+        """Generate response using Ollama OpenAI-compatible endpoint"""
+        messages = self._build_messages(prompt)
+        options = self.get_model_options(
+            temperature=temperature,
+            max_tokens=max_tokens,
+            n=1,
+            seed=seed if seed is not None else 42
+        )
+        
+        if stop:
+            options['stop'] = stop
+            
+        retry_num = 0
+        retry_limit = 2
+        
+        while retry_num <= retry_limit:
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    **options,
+                )
+                
+                # Track token usage
+                if hasattr(response, 'usage') and response.usage:
+                    input_tokens = getattr(response.usage, 'prompt_tokens', 0)
+                    output_tokens = getattr(response.usage, 'completion_tokens', 0)
+                    self._update_token_usage(input_tokens, output_tokens)
+                else:
+                    self.total_requests += 1
+                
+                content = response.choices[0].message.content or ""
+                return content
+                
+            except Exception as e:
+                logger.error(f"Ollama generation error (attempt {retry_num + 1}/{retry_limit + 1}): {e}")
+                retry_num += 1
+                if retry_num <= retry_limit:
+                    time.sleep(2)
+                else:
+                    raise e
+        
+        return ""

@@ -9,7 +9,11 @@ import requests
 import os
 from os.path import exists
 import yaml
-from msal import PublicClientApplication, SerializableTokenCache
+try:
+    from msal import PublicClientApplication, SerializableTokenCache
+except ImportError:
+    PublicClientApplication = None
+    SerializableTokenCache = None
 import requests
 import json
 from abc import ABC, abstractmethod
