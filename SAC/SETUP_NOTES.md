@@ -86,3 +86,28 @@ Configs are patched for `device_count=1`, `batch_size_per_device=1`,
 2. `huggingface-cli login` after accepting the Llama 3.2 license.
 3. `huggingface-cli download meta-llama/Llama-3.2-1B --local-dir $SAC_ROOT/models/Llama-3.2-1B`
 4. Phase A eval — see plan §3.4, then `util/paper_scores.py`.
+
+## Resume from checkpoint (local addition)
+
+The original trainers restart from step 0 when interrupted (and SFT saves nothing
+until the end). Both `pretrain/pre_trainer.py` and `sft/instruction_trainer.py`
+now write `<work_dir>/output/resume_checkpoint.pt` every `checkpoint_step`
+optimizer steps (default 500, roughly 100 MB). It holds the adapter, AdamW and LR
+scheduler state, step counter and loss history, and is written atomically
+(temp file + rename), so a power cut during a save leaves the previous one intact.
+
+```bash
+# interrupted? run the exact same command again with --resume
+python pre_trainer.py --work_dir $W --port 14572 --resume
+python instruction_trainer.py --work_dir $W --port 14527 --resume
+```
+
+- Without `--resume`, a trainer refuses to start if a checkpoint exists, so a
+  fresh run can never silently throw away progress. Delete the file to start over.
+- Resume refuses if the setup changed (GPU count, batch sizes, LR, sample count,
+  task config) — those change data sharding or the optimisation trajectory.
+- At most `checkpoint_step` steps are redone after a crash.
+- The checkpoint is deleted once the stage finishes; the final `adapter.pt` /
+  `instruction_adapter.pt` are written exactly as before.
+- The training data order is deterministic (no shuffling or dropout), so a
+  resumed run follows the same trajectory as an uninterrupted one.

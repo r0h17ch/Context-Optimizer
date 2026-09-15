@@ -103,3 +103,97 @@ def training_step(ddp_model, inputs, rank, accumulation_steps):
 
 
 
+
+# ---------------------------------------------------------------------------
+# Resume-from-checkpoint support (added for local reproduction runs).
+# The data order is deterministic (no shuffling, no dropout), so restoring the
+# adapter, optimizer, scheduler and step counter and then skipping the examples
+# already consumed continues the run exactly where it stopped.
+# ---------------------------------------------------------------------------
+
+RESUME_CHECKPOINT = "resume_checkpoint.pt"
+
+
+def add_resume_args(parser):
+    parser.add_argument('--resume', action='store_true',
+                        help=f'continue from <work_dir>/output/{RESUME_CHECKPOINT}')
+    return parser
+
+
+def resume_checkpoint_path(work_dir):
+    return os.path.join(work_dir, "output", RESUME_CHECKPOINT)
+
+
+def check_resume_args(args):
+    """Fail fast in the launcher so a fresh run never silently discards saved progress."""
+    path = resume_checkpoint_path(args.work_dir)
+    if os.path.exists(path) and not args.resume:
+        raise SystemExit(f"{path} exists from an interrupted run. "
+                         f"Re-run with --resume to continue it, or delete the file to start over.")
+    if args.resume and not os.path.exists(path):
+        raise SystemExit(f"--resume given but {path} does not exist.")
+
+
+def _run_signature(training_config, task_config, world_size, training_steps):
+    # anything that changes data sharding or the optimisation trajectory
+    return {
+        "model_id": os.path.basename(os.path.normpath(training_config["model_id"])),
+        "world_size": world_size,
+        "total_batch_size": training_config["total_batch_size"],
+        "batch_size_per_device": training_config["batch_size_per_device"],
+        "gradient_accumulation_steps": training_config["gradient_accumulation_steps"],
+        "learning_rate": training_config["learning_rate"],
+        "training_steps": training_steps,
+        "task_config": task_config,
+    }
+
+
+def save_resume_checkpoint(work_dir, model, optimizer, scheduler, step_num, info_list,
+                           training_config, task_config, world_size, training_steps):
+    """Write atomically, so a crash or power cut mid-save leaves the previous checkpoint intact."""
+    trainable = {n for n, p in model.named_parameters() if p.requires_grad}
+    state = {
+        "adapter": {n: t for n, t in model.state_dict().items() if n in trainable},
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+        "step_num": step_num,
+        "info_list": info_list,
+        "signature": _run_signature(training_config, task_config, world_size, training_steps),
+        "rng": {"torch": torch.get_rng_state(), "cuda": torch.cuda.get_rng_state(),
+                "python": random.getstate()},
+    }
+    path = resume_checkpoint_path(work_dir)
+    tmp = path + ".tmp"
+    torch.save(state, tmp)
+    os.replace(tmp, path)
+    logging.info(f"[RESUME] checkpoint saved at micro-step {step_num} -> {path}")
+
+
+def load_resume_checkpoint(work_dir, model, optimizer, scheduler,
+                           training_config, task_config, world_size, training_steps):
+    """Restore state in place; returns (step_num, info_list)."""
+    path = resume_checkpoint_path(work_dir)
+    state = torch.load(path, map_location="cpu")
+    expected = _run_signature(training_config, task_config, world_size, training_steps)
+    if state["signature"] != expected:
+        diff = {k: (state["signature"].get(k), v) for k, v in expected.items()
+                if state["signature"].get(k) != v}
+        raise SystemExit(f"{path} was saved with a different setup (saved, current): {diff}")
+
+    missing = set(n for n, p in model.named_parameters() if p.requires_grad) - set(state["adapter"])
+    if missing:
+        raise SystemExit(f"{path} is missing trainable parameters, e.g. {sorted(missing)[:3]}")
+    model.load_state_dict({k: v.to(model.device) for k, v in state["adapter"].items()}, strict=False)
+    optimizer.load_state_dict(state["optimizer"])
+    scheduler.load_state_dict(state["scheduler"])
+    torch.set_rng_state(state["rng"]["torch"])
+    torch.cuda.set_rng_state(state["rng"]["cuda"])
+    random.setstate(state["rng"]["python"])
+    logging.info(f"[RESUME] restored micro-step {state['step_num']} from {path}")
+    return state["step_num"], state["info_list"]
+
+
+def remove_resume_checkpoint(work_dir):
+    path = resume_checkpoint_path(work_dir)
+    if os.path.exists(path):
+        os.remove(path)

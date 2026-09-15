@@ -23,6 +23,7 @@ import logging
 import wandb
 
 from util.utils import get_wsd_scheduler, training_step, setup, count_parameters
+from util.utils import add_resume_args, check_resume_args, save_resume_checkpoint, load_resume_checkpoint, remove_resume_checkpoint
 
 # 配置日志，同时输出到屏幕和文件
 logging.basicConfig(
@@ -42,6 +43,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--work_dir', type=str, default='project',required=False, help='Directory including the configuration file, for saving model')
     parser.add_argument('--port', type=str, default='14527', required=False, help='port for ddp training')
+    add_resume_args(parser)
     return parser.parse_args()
 
 
@@ -95,21 +97,28 @@ def train(rank, args, world_size):
     # check non-frozen parameters
     if rank == 0:
         count_parameters(model, config)
+    # Instantiate  optimizer
+    optimizer = torch.optim.AdamW(model.parameters(), lr=training_config["learning_rate"], betas=(0.9, 0.95), weight_decay=0.1)
+    scheduler = get_wsd_scheduler(optimizer, training_steps)
+    accumulation_steps = training_config["gradient_accumulation_steps"]
+    checkpoint_step = training_config.get("checkpoint_step", 500)
+    step_num = 0
+    info_list = []
+    if args.resume:
+        step_num, info_list = load_resume_checkpoint(args.work_dir, model, optimizer, scheduler,
+                                                     training_config, task_config, world_size, training_steps)
+        train_examples = train_examples[step_num * training_config['batch_size_per_device']:]
+
     ddp_model = DDP(model, device_ids=[rank], find_unused_parameters=True)
     # Instantiate the data loader
     dataset = get_dataset(task_config["task_type"], train_examples, training_config['batch_size_per_device'])
     loader = DataLoader(dataset, batch_size=None)
-    # Instantiate  optimizer
-    optimizer = torch.optim.AdamW(ddp_model.parameters(), lr=training_config["learning_rate"], betas=(0.9, 0.95), weight_decay=0.1)
-    scheduler = get_wsd_scheduler(optimizer, training_steps)
-    accumulation_steps = training_config["gradient_accumulation_steps"]
-    step_num = 0
-    
+
     optimizer.zero_grad()
     ddp_model.train()
-    
-    info_list = []
-    start_time = time.time()
+
+    # keep run_time cumulative across resumes
+    start_time = time.time() - (info_list[-1]["run_time(hours)"] * 3600 if info_list else 0)
                     
     for epoch in range(1):
 
@@ -125,7 +134,7 @@ def train(rank, args, world_size):
             save_adapter(ddp_model.module,save_path_and_name=os.path.join(args.work_dir,f"{output_dir}/adapter.pt"))
 
         if rank == 0:
-            progress_bar = tqdm(total=training_steps*accumulation_steps)
+            progress_bar = tqdm(total=training_steps*accumulation_steps, initial=step_num)
 
         for inputs in loader:
             step_num += 1
@@ -161,17 +170,23 @@ def train(rank, args, world_size):
                     logging.info(info_list[-1])
             if step_num % (training_config["save_step"]*accumulation_steps) == 0:
                 save()
+            if rank == 0 and step_num % (checkpoint_step*accumulation_steps) == 0:
+                save_resume_checkpoint(args.work_dir, ddp_model.module, optimizer, scheduler, step_num, info_list,
+                                       training_config, task_config, world_size, training_steps)
             if rank == 0:
                 progress_bar.update(1)
         if rank == 0:
             progress_bar.close()
         save()
+        if rank == 0:
+            remove_resume_checkpoint(args.work_dir)
 
 
 
 # Launch multi-process training
 if __name__ == "__main__":
     args = parse_args()
+    check_resume_args(args)
     world_size = torch.cuda.device_count()
 
     output_dir = "output"
