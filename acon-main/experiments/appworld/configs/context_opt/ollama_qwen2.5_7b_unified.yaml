@@ -1,10 +1,13 @@
-type: "history"
-model: "ollama/qwen2.5:14b"
+# ACON unified (history + observation) optimizer — compressor: qwen2.5:7b
+type: "unified"
+model: "ollama/qwen2.5:7b"
 compressor_type: "full"
 prompts:
   prompt_system: "system_prompt"
+  prompt_user: "prompt_user"
   prompt_history_user: "prompt_history_v2"
 history_summarization_threshold: 4096
+obs_summarization_threshold: 1024
 preserve_last_k_turns: 1
 history_summary_rule: "reset"
 temperature: 0.0
