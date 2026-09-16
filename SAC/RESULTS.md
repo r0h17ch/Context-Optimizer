@@ -12,11 +12,8 @@ Paper: *Autoencoding-Free Context Compression for LLMs via Contextual Semantic A
 |---|---|---|---|---|---|---|
 | Released SAC checkpoint (eval only) | 15× | **54.98** / 54.95 (+0.03) | **39.67** / 39.67 (+0.00) | **39.25** / 39.26 (-0.02) | **26.17** / 26.02 (+0.15) | ✅ reproduced |
 | Released SAC checkpoint (eval only) | 5× | **63.70** / 63.63 (+0.07) | **47.04** / 46.95 (+0.10) | **47.71** / 47.72 (-0.01) | **32.46** / 32.30 (+0.16) | ✅ reproduced |
-| SAC trained by us | 15× | — / 54.95 | — / 39.67 | — / 39.26 | — / 26.02 | not started |
-| SAC trained by us | 5× | — / 63.63 | — / 46.95 | — / 47.72 | — / 32.30 | not started |
-| SAC trained by us | 51× | — / 46.37 | — / 33.08 | — / 32.24 | — / 21.44 | not started |
-| Ablation: AE loss only | 5× | — / 56.55 | — / 40.34 | — / 42.08 | — / 27.98 | not started |
-| Ablation: AE + LM loss | 5× | — / 62.04 | — / 45.80 | — / 47.26 | — / 32.25 | not started |
+
+
 
 Original = the authors' released result files for the eval-only runs (identical to the paper's Table 1/2), and the paper's tables for runs we train ourselves. Pass bar: within 0.5 F1 for eval-only runs, within ~2 F1 for runs we train (training in bf16 on a different GPU count is not bit-reproducible).
 
