@@ -39,8 +39,12 @@ def setup(rank, world_size, port):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = port
 
-    # Initialize the distributed environment
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    # Initialize the distributed environment.
+    # SAC_DDP_BACKEND lets a machine fall back to "gloo": NCCL calls nvmlInit(), which
+    # fails outright when the loaded kernel module and the userspace NVIDIA libraries
+    # are different versions. gloo talks to CUDA tensors directly and does not.
+    backend = os.environ.get("SAC_DDP_BACKEND", "nccl")
+    dist.init_process_group(backend, rank=rank, world_size=world_size)
 
 
 

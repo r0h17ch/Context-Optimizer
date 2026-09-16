@@ -8,3 +8,6 @@ export NCCL_P2P_DISABLE=1
 export CUDA_VISIBLE_DEVICES=0
 # the evaluators call plt.show(); on a desktop session that opens a Tk window and blocks forever
 export MPLBACKEND=Agg
+# NCCL needs nvmlInit(), which fails while the 550 kernel module and 580 userspace
+# libraries disagree. gloo is equivalent here on a single GPU.
+export SAC_DDP_BACKEND=gloo
