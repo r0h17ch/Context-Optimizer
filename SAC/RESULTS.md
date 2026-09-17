@@ -1,6 +1,6 @@
 # SAC reproduction results — ours vs. original
 
-_Generated 2026-09-17 11:09 by `util/make_results_md.py`. Re-run it after each eval to refresh._
+_Generated 2026-09-17 11:45 by `util/make_results_md.py`. Re-run it after each eval to refresh._
 
 Paper: *Autoencoding-Free Context Compression for LLMs via Contextual Semantic Anchors* (ICLR 2026). Base model Llama-3.2-1B, MRQA benchmark, 6 in-domain (ID) and 6 out-of-domain (OOD) subsets.
 
@@ -72,36 +72,9 @@ Original = the authors' released result files for the eval-only runs (identical 
 | TextbookQA | 52.53 | 52.24 | +0.29 | 33.40 | 32.93 | +0.47 |
 | **Average** | **47.71** | **47.72** | -0.01 | **32.46** | **32.30** | +0.16 |
 
-## Pilot: SAC × ACON (5k-step SFT, 1/10 eval)
+## SAC × ACON pilot
 
-Every arm starts from the authors' released 15× pretrain adapter and is paired at the training level — same seed, same data order, same initialisation — differing only in the loss term. `get_wsd_scheduler` is warmup(300) + constant with no decay phase, so a 5k-step run is exactly the first 5k steps of the 20k schedule. Absolute numbers therefore sit below the released 20k checkpoint; compare **within** this table only.
-
-| Run | Role | ID F1 | OOD F1 | ΔID vs R0 (95% CI) | ΔOOD vs R0 (95% CI) |
-|---|---|---|---|---|---|
-| R0 · SAC SFT (matched control) | — | 51.37 | 38.62 | — | — |
-| R2 · + FGD (failure-gated KL, λ=1) | proposed | 51.15 | 38.47 | -0.23 [-0.95, +0.47] | -0.14 [-2.04, +1.77] |
-| R1 · + uniform KL (λ=ḡ, mass-matched) | ablation | 51.06 | 38.17 | -0.32 [-1.02, +0.44] | -0.45 [-2.11, +1.44] |
-| R1a · + uniform KL (λ=1, KV-Distill style) | literature | — | — | not started | not started |
-| R3 · + TGA + FGD (query-aware) | separate track | — | — | not started | not started |
-| R3b · + TGA alone (query-aware) | separate track | — | — | not started | not started |
-
-**\*** = 95% CI of the paired bootstrap (1,000 resamples, stratified by subset) excludes 0. The CI covers example variance only — all arms are single-seed (plan-v2 T1).
-
-**Supporting ablation — R2 vs R1 (same KL mass, different examples):** ID +0.09 [-0.62, +0.80], OOD +0.30 [-1.71, +2.31]. This isolates *which* examples receive the KL from *how much* KL there is.
-
-### G0 — is the failure gate real?
-
-Gold-answer NLL on 2000 train examples: **student 0.75, teacher 2.42** — the zero-shot full-context teacher is much worse *on average*, so uniform KL should hurt. Gate rate at margin 0: **9.5%**.
-
-But the gate fires where it should: on 2000 eval examples it selects **19.2%** of the examples the released student got completely wrong (F1=0) versus **1.5%** of those it got right. Mean F1 **0.180 when gated** vs **0.616 when not** (point-biserial -0.287).
-
-### Realized gate rate during training
-
-| Run | mean | first quarter | last quarter |
-|---|---|---|---|
-| R2 · + FGD (failure-gated KL, λ=1) | 16.1% | 22.6% | 13.3% |
-
-A rate collapsing toward 0 means the gate annealed itself away and R2 degenerates into R0 (plan-v2 T11).
+The combined-method results (4 arms run so far) live in their own document: **[RESULTS_SAC_ACON.md](RESULTS_SAC_ACON.md)**. In short — failure-gated distillation (FGD) is a null result, task-guided anchors (TGA) are a large win. Threat analysis and run design are in [`plan-v2.md`](../plan-v2.md).
 
 ## Setup differences from the authors
 
