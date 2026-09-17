@@ -1,6 +1,6 @@
 # SAC × ACON — combined-method results
 
-_Generated 2026-09-17 11:45 by `util/make_pilot_results.py`._ For the SAC reproduction record see [RESULTS.md](RESULTS.md); for the threat analysis and run design see [`plan-v2.md`](../plan-v2.md).
+_Generated 2026-09-17 11:49 by `util/make_pilot_results.py`._ For the SAC reproduction record see [RESULTS.md](RESULTS.md); for the threat analysis and run design see [`plan-v2.md`](../plan-v2.md).
 
 ## Headline
 
@@ -45,12 +45,14 @@ With single-seed arms a bootstrap over examples cannot rule out run-to-run noise
 | R0 · SAC SFT | 49.68 | 51.37 | (control) | (control) | — |
 | R2 · + FGD (gated KL, λ=1) | 48.83 | 51.15 | -0.85 | -0.23 | yes |
 | R1 · + uniform KL (λ=ḡ) | 48.49 | 51.06 | -1.19 | -0.32 | yes |
+| R3 · + TGA + FGD | 56.89 | 60.03 | +7.22 | +8.66 | yes |
 
 | Run | OOD F1 @2.5k | OOD F1 @5k | Δ vs R0 @2.5k | Δ vs R0 @5k | sign holds? |
 |---|---|---|---|---|---|
 | R0 · SAC SFT | 39.05 | 38.62 | (control) | (control) | — |
 | R2 · + FGD (gated KL, λ=1) | 36.74 | 38.47 | -2.31 | -0.14 | yes |
 | R1 · + uniform KL (λ=ḡ) | 35.75 | 38.17 | -3.30 | -0.45 | yes |
+| R3 · + TGA + FGD | 44.07 | 44.71 | +5.02 | +6.10 | yes |
 
 ## Finding 1 — FGD does not work
 

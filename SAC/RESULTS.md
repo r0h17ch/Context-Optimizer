@@ -1,6 +1,6 @@
 # SAC reproduction results — ours vs. original
 
-_Generated 2026-09-17 11:45 by `util/make_results_md.py`. Re-run it after each eval to refresh._
+_Generated 2026-09-17 11:49 by `util/make_results_md.py`. Re-run it after each eval to refresh._
 
 Paper: *Autoencoding-Free Context Compression for LLMs via Contextual Semantic Anchors* (ICLR 2026). Base model Llama-3.2-1B, MRQA benchmark, 6 in-domain (ID) and 6 out-of-domain (OOD) subsets.
 
