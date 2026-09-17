@@ -419,7 +419,39 @@ keeps the prompt under the ceiling, truncation never fires, and the `hit_max_ite
 should drop. That comparison is more diagnostic than success rate, because it isolates the
 mechanism instead of the outcome, and it is far less sensitive to one or two lucky tasks.
 
-### Finding 10 — ACON arms, full split
+### Finding 10 — The lab machine auto-suspends mid-run
+
+The workstation went dark at 18:33 and stayed unreachable overnight. The journal was
+unambiguous:
+
+```
+systemd-logind: The system will suspend now!
+NetworkManager: manager: NetworkManager state is now ASLEEP
+```
+
+Ubuntu's GNOME default is `sleep-inactive-ac-type = suspend` after **7200 s** idle. A
+benchmark driven over SSH does not count as user activity, so after two hours of nobody
+touching the desktop the machine suspended itself and took Wi-Fi and Tailscale down with it.
+
+The run itself survived: `nohup`-ed processes are frozen on suspend and resume on wake, so
+the driver picked up exactly where it stopped. What was lost was ~15 hours of wall-clock.
+
+Fixed on 2026-09-17:
+
+```bash
+gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type nothing
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+sudo systemctl enable tailscaled
+```
+
+To undo later (it is a shared lab machine):
+`sudo systemctl unmask sleep.target suspend.target hibernate.target hybrid-sleep.target` and
+`gsettings reset org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type`.
+
+**Lesson for any long run on a desktop machine:** check power settings before launching, and
+sync results off the box after every arm, not at the end.
+
+### Finding 11 — ACON arms, full split
 
 _In progress. `acon_hist_q7b` started 17:38. Then `acon_hist_q7b_t4096` (paper default
 threshold) and `acon_obs_q7b`. Scope was cut from six arms to four to fit the deadline;
