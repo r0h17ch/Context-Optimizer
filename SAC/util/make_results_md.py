@@ -46,6 +46,108 @@ def diff(a, b):
     return f"{a - b:+.2f}"
 
 
+
+PILOT_RUNS = [
+    ("r0_sac", "R0 · SAC SFT (matched control)", "—"),
+    ("r2_fgd", "R2 · + FGD (failure-gated KL, λ=1)", "proposed"),
+    ("r1_uniform_matched", "R1 · + uniform KL (λ=ḡ, mass-matched)", "ablation"),
+    ("r1a_uniform_lambda1", "R1a · + uniform KL (λ=1, KV-Distill style)", "literature"),
+    ("r3_tga_fgd", "R3 · + TGA + FGD (query-aware)", "separate track"),
+    ("r3_tga", "R3b · + TGA alone (query-aware)", "separate track"),
+]
+
+
+def realized_gate_rate(base):
+    """Mean gate over the training run -- the fraction of examples where the full-context
+    teacher actually beat the compressed student while training (plan-v2 T11)."""
+    info = load(f"{base}/output/instruction_info.json")
+    if not info:
+        return None
+    gates = [e["training_loss"]["gate"] for e in info
+             if isinstance(e.get("training_loss"), dict) and "gate" in e["training_loss"]]
+    if not gates:
+        return None
+    first, last = gates[:len(gates)//4], gates[-len(gates)//4:]
+    return (sum(gates)/len(gates), sum(first)/len(first), sum(last)/len(last))
+
+
+def pilot_section(w, stride=10):
+    sfx = f"_stride{stride}"
+    rows = []
+    for name, label, kind in PILOT_RUNS:
+        base = f"{SAC}/experiment/{name}"
+        iid = load(f"{base}/output/iid_subset_eval_results{sfx}.json")
+        ood = load(f"{base}/output/ood_subset_eval_results{sfx}.json")
+        if iid and ood:
+            m_id = macro(subset_scores(iid, ID, "rouge-f1", "exact_match"))
+            m_ood = macro(subset_scores(ood, OOD, "f1", "em"))
+            rows.append((name, label, kind, m_id, m_ood, load(f"{base}/output/bootstrap_vs_r0.json")))
+        else:
+            rows.append((name, label, kind, None, None, None))
+    if not any(r[3] for r in rows):
+        return
+
+    w("## Pilot: SAC × ACON (5k-step SFT, 1/10 eval)\n")
+    w("Every arm starts from the authors' released 15× pretrain adapter and is paired at the "
+      "training level — same seed, same data order, same initialisation — differing only in the "
+      "loss term. `get_wsd_scheduler` is warmup(300) + constant with no decay phase, so a 5k-step "
+      "run is exactly the first 5k steps of the 20k schedule. Absolute numbers therefore sit below "
+      "the released 20k checkpoint; compare **within** this table only.\n")
+
+    w("| Run | Role | ID F1 | OOD F1 | ΔID vs R0 (95% CI) | ΔOOD vs R0 (95% CI) |")
+    w("|---|---|---|---|---|---|")
+    for name, label, kind, m_id, m_ood, bs in rows:
+        if not m_id:
+            w(f"| {label} | {kind} | — | — | not started | not started |")
+            continue
+        def ci(d):
+            if not d:
+                return "—"
+            mark = " **\\***" if d["significant"] else ""
+            return f'{d["delta"]:+.2f} [{d["ci_low"]:+.2f}, {d["ci_high"]:+.2f}]{mark}'
+        w(f"| {label} | {kind} | {m_id[0]:.2f} | {m_ood[0]:.2f} | "
+          f'{ci(bs["ID"] if bs else None)} | {ci(bs["OOD"] if bs else None)} |')
+    w("")
+    w("**\\*** = 95% CI of the paired bootstrap (1,000 resamples, stratified by subset) excludes 0. "
+      "The CI covers example variance only — all arms are single-seed (plan-v2 T1).\n")
+
+    r2r1 = load(f"{SAC}/experiment/r2_fgd/output/bootstrap_vs_r1.json")
+    if r2r1:
+        w("**Supporting ablation — R2 vs R1 (same KL mass, different examples):** "
+          f'ID {r2r1["ID"]["delta"]:+.2f} [{r2r1["ID"]["ci_low"]:+.2f}, {r2r1["ID"]["ci_high"]:+.2f}], '
+          f'OOD {r2r1["OOD"]["delta"]:+.2f} [{r2r1["OOD"]["ci_low"]:+.2f}, {r2r1["OOD"]["ci_high"]:+.2f}]. '
+          "This isolates *which* examples receive the KL from *how much* KL there is.\n")
+
+    g = load(f"{SAC}/experiment/release_15x/output/gate_diagnostic.json")
+    if g:
+        t, e = g["train"], g.get("eval")
+        w("### G0 — is the failure gate real?\n")
+        w(f'Gold-answer NLL on {t["n"]} train examples: **student {t["nll_student_mean"]:.2f}, '
+          f'teacher {t["nll_teacher_mean"]:.2f}** — the zero-shot full-context teacher is much worse '
+          f'*on average*, so uniform KL should hurt. Gate rate at margin 0: '
+          f'**{t["gate_rate_by_margin"]["0"]*100:.1f}%**.\n')
+        if e:
+            w(f'But the gate fires where it should: on {e["n"]} eval examples it selects '
+              f'**{e["gate_rate_on_f1_zero"]*100:.1f}%** of the examples the released student got '
+              f'completely wrong (F1=0) versus **{e["gate_rate_on_f1_gt_half"]*100:.1f}%** of those it '
+              f'got right. Mean F1 **{e["mean_f1_when_gated"]:.3f} when gated** vs '
+              f'**{e["mean_f1_when_not_gated"]:.3f} when not** '
+              f'(point-biserial {e["pointbiserial_margin_vs_f1"]:+.3f}).\n')
+
+    gates = [(label, realized_gate_rate(f"{SAC}/experiment/{name}"))
+             for name, label, kind, *_ in rows if kind == "proposed" or "TGA + FGD" in label]
+    gates = [(l, g) for l, g in gates if g]
+    if gates:
+        w("### Realized gate rate during training\n")
+        w("| Run | mean | first quarter | last quarter |")
+        w("|---|---|---|---|")
+        for label, (mean, first, last) in gates:
+            w(f"| {label} | {mean*100:.1f}% | {first*100:.1f}% | {last*100:.1f}% |")
+        w("")
+        w("A rate collapsing toward 0 means the gate annealed itself away and R2 degenerates "
+          "into R0 (plan-v2 T11).\n")
+
+
 def main():
     out = []
     w = out.append
@@ -100,6 +202,8 @@ def main():
             w(f"| **Average** | **{f:.2f}** | **{fo:.2f}** | {diff(f, fo)} | **{e:.2f}** | **{eo:.2f}** | {diff(e, eo)} |")
             w("")
 
+    pilot_section(w)
+
     w("## Setup differences from the authors\n")
     w("| | Authors | Ours |")
     w("|---|---|---|")
@@ -107,7 +211,9 @@ def main():
     w("| Base model source | `meta-llama/Llama-3.2-1B` | `unsloth/Llama-3.2-1B` @ `1d05b8ce9cd7` (ungated mirror; tokenizer verified identical on 201 cached examples) |")
     w("| Data caches | built by authors | the authors' released caches from `lx-Meteors/SAC` |")
     w("| Eval | greedy, batch 1 | same |")
-    w("| Code change | — | none; only `MPLBACKEND=Agg` set so `plt.show()` doesn't block on a desktop |")
+    w("| Code change | — | none for the reproduction rows above (only `MPLBACKEND=Agg`). The pilot rows add "
+      "FGD/TGA behind config keys that are absent by default — verified bit-identical to the "
+      "pre-change code on 20 SFT examples. |")
     w("")
     open(f"{SAC}/RESULTS.md", "w").write("\n".join(out))
     print(f"wrote {SAC}/RESULTS.md")

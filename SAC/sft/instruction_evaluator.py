@@ -30,16 +30,41 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--work_dir', type=str, default='instruction_rank-128_cl-lm_mrqa', required=False, help='Directory including the configuration file')
     parser.add_argument('--batch_size', type=int, default=1, required=False, help='total batch size')
+    parser.add_argument('--eval_stride', type=int, default=1, required=False,
+                        help='evaluate every k-th example (k=10 -> 6,786 of 67,854). Both the '
+                             'generations and the gold examples_list are sliced identically.')
+    parser.add_argument('--adapter_name', type=str, default='instruction_adapter.pt', required=False,
+                        help='adapter file inside <work_dir>/output to evaluate')
     return parser.parse_args()
+
+
+def result_suffix(args):
+    """Every artefact is named for the stride and adapter it came from.
+
+    Without this, `instruction_eval_info_list_0.json` from a stride-10 pilot eval would be
+    silently reused by a later full eval (the __main__ block skips generation whenever that
+    file exists), scoring 6,786 generations against 67,854 golds.
+    """
+    suffix = ""
+    if args.eval_stride > 1:
+        suffix += f"_stride{args.eval_stride}"
+    if args.adapter_name != "instruction_adapter.pt":
+        stem = os.path.splitext(os.path.basename(args.adapter_name))[0]
+        suffix += "_" + stem.replace("instruction_adapter", "").lstrip("_")
+    return suffix
 
 class Evaluator:
 
-    def __init__(self, config, work_dir, batch_size, tokenizer):
+    def __init__(self, config, work_dir, batch_size, tokenizer, eval_stride=1,
+                 adapter_name='instruction_adapter.pt', suffix=""):
         self.config = config
         self.work_dir = work_dir
         self.batch_size = batch_size
         self.device_count = torch.cuda.device_count()
         self.tokenizer = tokenizer
+        self.eval_stride = eval_stride
+        self.adapter_name = adapter_name
+        self.suffix = suffix
 
     # def draw_loss(self):
     #     with open(os.path.join(self.work_dir,"instruction_info.json")) as f:
@@ -101,6 +126,18 @@ class Evaluator:
         training_config = self.config["sft_training_config"]
         task_config = self.config["sft_task_config"]
         train_examples, eval_examples = get_examples(**self.config["data_config"])
+
+        # The rank split below divides by the *config* device_count while world_size comes
+        # from the *hardware*. If they disagree, rank 0 silently evaluates a fraction of the
+        # set and everything downstream scores it without complaint (plan-v2 T7).
+        assert training_config["device_count"] == self.device_count, (
+            f'config device_count={training_config["device_count"]} but '
+            f'torch.cuda.device_count()={self.device_count}; the eval set would be silently truncated')
+
+        if self.eval_stride > 1:
+            eval_examples = eval_examples[::self.eval_stride]
+            print(f"[INFO] eval_stride={self.eval_stride}: {len(eval_examples)} examples")
+
         example_num_per_gpu = len(eval_examples)//training_config["device_count"]
 
         if rank <= self.device_count-2:
@@ -110,11 +147,12 @@ class Evaluator:
 
         print(f"[INFO] GPU{rank}: eval_examples[{rank*example_num_per_gpu}:{rank*example_num_per_gpu+len(eval_examples)}], nums:{len(eval_examples)}")
 
-        dataset = get_dataset(task_config["task_type"], eval_examples, batch_size=self.batch_size)
+        dataset = get_dataset(task_config["task_type"], eval_examples, batch_size=self.batch_size,
+                              add_query_ids=task_config.get("encoder_query", False))
         loader = DataLoader(dataset, batch_size=None)
-        
+
         model = get_model(training_config["model_id"], task_config, rank)
-        model = load_adapter(model, save_path_and_name=self.work_dir+'/instruction_adapter.pt', log=True)
+        model = load_adapter(model, save_path_and_name=os.path.join(self.work_dir, self.adapter_name), log=True)
         model.eval()
 
         info_list=[]
@@ -125,7 +163,7 @@ class Evaluator:
                 generate_text = model.lm_inference(inputs)
                 info_list.append({"generate_text": generate_text})
 
-        with open(self.work_dir+f'/instruction_eval_info_list_{rank}.json', 'w', encoding='utf-8') as f:
+        with open(self.work_dir+f'/instruction_eval_info_list_{rank}{self.suffix}.json', 'w', encoding='utf-8') as f:
             json.dump(info_list, f, ensure_ascii=False)
         
         
@@ -133,14 +171,18 @@ class Evaluator:
                 
     def run(self, rank):
         # draw training loss
-        if rank==0:
+        if rank==0 and os.path.exists(os.path.join(self.work_dir, "instruction_info.json")):
             # self.draw_loss()
-            self.draw_ema_loss(alpha=0.1)
+            try:
+                self.draw_ema_loss(alpha=0.1)
+            except Exception as e:
+                print(f"[WARN] could not draw the loss curve: {e}")
         self.evaluate(rank)
 
 
 def evaluate(rank, args, world_size, tokenizer):
 
+    suffix = result_suffix(args)
     with open(args.work_dir+"/output/config.json") as f:
         config=json.load(f)
 
@@ -149,12 +191,13 @@ def evaluate(rank, args, world_size, tokenizer):
         format='%(asctime)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
         handlers=[
-            logging.FileHandler(args.work_dir+f'/output/instruction_evaluate_info_rank{rank}.txt', mode='w'),
+            logging.FileHandler(args.work_dir+f'/output/instruction_evaluate_info_rank{rank}{suffix}.txt', mode='w'),
             logging.StreamHandler()
         ]
     )
     
-    evaluator = Evaluator(config, args.work_dir+"/output", args.batch_size, tokenizer)
+    evaluator = Evaluator(config, args.work_dir+"/output", args.batch_size, tokenizer,
+                          eval_stride=args.eval_stride, adapter_name=args.adapter_name, suffix=suffix)
     evaluator.run(rank)
 
 # def cal_avg_loss(args, config):
@@ -211,16 +254,18 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(config["data_config"]["model_id"])
 
     sys.setrecursionlimit(10000)
-    if not os.path.exists(args.work_dir+f'/output/instruction_eval_info_list_0.json'):
+    suffix = result_suffix(args)
+    if not os.path.exists(args.work_dir+f'/output/instruction_eval_info_list_0{suffix}.json'):
         mp.spawn(evaluate,
                 args=(args, world_size, tokenizer),
                 nprocs=world_size,
                 join=True)
-
+    else:
+        print(f"[INFO] reusing existing generations for suffix '{suffix}'")
 
     info_list = []
     for i in range(world_size):
-        with open(args.work_dir+f'/output/instruction_eval_info_list_{i}.json', 'r', encoding='utf-8') as f:
+        with open(args.work_dir+f'/output/instruction_eval_info_list_{i}{suffix}.json', 'r', encoding='utf-8') as f:
             list_i =  json.load(f)
         info_list += list_i
 
@@ -228,9 +273,22 @@ if __name__ == "__main__":
 
     print("calculate BLEU4...")
     instruction_dataset_name = config["data_config"]["instruction_dataset_repo"].split('/')[-1]
-    if os.path.exists(f'output/{instruction_dataset_name}_test_instruction_dataset.json'):
-        with open(f'output/{instruction_dataset_name}_test_instruction_dataset.json', 'r', encoding='utf-8') as f:
-            examples_list =  json.load(f)
+    # resolve relative to this file, not the caller's cwd, and fail loudly rather than
+    # leaving examples_list undefined (plan-v2 T8)
+    gold_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "output", f"{instruction_dataset_name}_test_instruction_dataset.json")
+    if not os.path.exists(gold_path):
+        raise FileNotFoundError(
+            f"gold examples not found at {gold_path}; run instruction_prepare_data.py first")
+    with open(gold_path, 'r', encoding='utf-8') as f:
+        examples_list = json.load(f)
+
+    # slice the golds exactly as Evaluator.evaluate sliced the inputs
+    if args.eval_stride > 1:
+        examples_list = examples_list[::args.eval_stride]
+    assert len(generate_text) == len(examples_list), (
+        f"{len(generate_text)} generations vs {len(examples_list)} golds -- stride mismatch; "
+        f"delete instruction_eval_info_list_*{suffix}.json and re-run")
 
     instruction_inference_results = []
     bleu4_list = []
@@ -251,8 +309,9 @@ if __name__ == "__main__":
         answer = example["answers"][0]
         ans_text = answer
         gen_text = tokenizer.decode(gen_text, skip_special_tokens=True)
-        print("answer: " , answer)
-        print("gen_text: " , gen_text)
+        if len(instruction_inference_results) < 20:   # sample, not every example
+            print("answer: " , answer)
+            print("gen_text: " , gen_text)
         # if gen_text == "." or gen_text == "":
         #     gen_text = "test"
 
@@ -291,11 +350,22 @@ if __name__ == "__main__":
     # print(f"avg_compress_loss:{avg_compress_loss}")
     rouge1_f1 = np.mean(rouge1_scores)
     print(f"rouge1_f1:{rouge1_f1}")
-    with open(args.work_dir+f'/output/instruction_brief_eval_info.json', 'w', encoding='utf-8') as f:
+    with open(args.work_dir+f'/output/instruction_brief_eval_info{suffix}.json', 'w', encoding='utf-8') as f:
         json.dump(f"avg_bleu4:{avg_bleu4}, rouge1_f1:{rouge1_f1}", f, ensure_ascii=False)
 
-    with open(args.work_dir+f'/output/instruction_inference_results.json', 'w', encoding='utf-8') as f:
+    with open(args.work_dir+f'/output/instruction_inference_results{suffix}.json', 'w', encoding='utf-8') as f:
         json.dump(instruction_inference_results, f, ensure_ascii=False, indent=4)
+
+    # Compact sidecar: instruction_inference_results.json writes the whole context back out
+    # per example and reaches 1.66 GB on a full eval, which makes a paired bootstrap over two
+    # runs a memory problem. Everything the bootstrap needs is four fields (plan-v2 T8).
+    scores = [{"i": i, "subset": ex["subset"], "rouge-f1": ex["rouge-f1"],
+               "exact_match": ex["exact_match"], "bleu4": ex["bleu4"]}
+              for i, ex in enumerate(instruction_inference_results)]
+    sidecar = args.work_dir+f'/output/per_example_scores{suffix}.json'
+    with open(sidecar, 'w', encoding='utf-8') as f:
+        json.dump(scores, f, ensure_ascii=False)
+    print(f"wrote {sidecar} ({len(scores)} examples)")
 
 
 """

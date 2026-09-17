@@ -6,6 +6,7 @@ sys.path.append(BASE_PATH)
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from torch import nn
+import torch.nn.functional as F
 import math
 from model.lora import LinearLoraLayer
 
@@ -150,9 +151,126 @@ class CompressLLM(torch.nn.Module):
             tot_loss += lm_loss
             tot_task += 1
 
+            # ---- FGD: failure-gated distillation from the frozen full-context decoder ----
+            # Off unless `distill_weight` is set, so the default SAC path is untouched.
+            distill_weight = self.task_config.get("distill_weight", 0.0)
+            if distill_weight > 0:
+                kl, info = self.distill_loss(inputs, logits)
+                loss_info.update(info)
+                # tot_task is deliberately not incremented: with tot_task == 1 the
+                # returned loss is exactly CE + lambda * w * KL.
+                tot_loss += distill_weight * kl
+
 
         loss = tot_loss/tot_task
         return {"loss":loss, "loss_info":loss_info}
+
+    def teacher_answer_logits(self, inputs, answer_mask):
+        """Frozen full-context teacher logits on the answer positions only.
+
+        The teacher is the same frozen decoder the student writes into, fed the raw
+        context instead of compressed memory, so it costs no extra weights.
+
+        Alignment: with C = len(input_ids) the teacher sequence is
+        `input_ids + lm_targets[:-1]` (length C+Q+A-1). Logit i predicts token i+1, and
+        instruction_target[k] == lm_targets[k+1] sits at logit index C+k, so slicing the
+        teacher at [C:] lines up 1:1 with the student's logits[:, 1:].
+
+        `LlamaForCausalLM` casts logits to float32 over the whole sequence, which is up to
+        1.9 GB here (seq max 3747 x vocab 128256 x 4B). So run the bare `LlamaModel` for
+        hidden states and apply lm_head only to the answer rows (max 268 of them).
+        """
+        C = inputs["input_ids"].size(1)
+        teacher_ids = torch.cat([inputs["input_ids"], inputs["lm_targets"][:, :-1]], dim=1)
+        with torch.no_grad():
+            hidden = self.decoder.model(input_ids=teacher_ids).last_hidden_state
+            # [C+Q+A-1, D] -> [Q+A-1, D] -> [A, D]
+            hidden = hidden[0, C:][answer_mask]
+            return self.decoder.lm_head(hidden)
+
+    def distill_loss(self, inputs, student_logits):
+        """KL(teacher || student) over answer tokens, gated on teacher-beats-student NLL.
+
+        `student_logits` is the already-flattened [Q+A-1, V] tensor from the SFT branch,
+        so the student costs no second forward pass.
+        """
+        target = inputs["instruction_target"]
+        answer_mask = target != -100
+        n_answer = int(answer_mask.sum())
+        if n_answer == 0:
+            zero = student_logits.sum() * 0.0
+            return zero, {"kl": 0.0, "gate": 0.0, "nll_student": 0.0, "nll_teacher": 0.0}
+
+        gold = target[answer_mask]
+        student_ans = student_logits[answer_mask].float()
+        teacher_ans = self.teacher_answer_logits(inputs, answer_mask).float()
+
+        nll_student = F.cross_entropy(student_ans.detach(), gold)
+        nll_teacher = F.cross_entropy(teacher_ans, gold)
+
+        gate_mode = self.task_config.get("distill_gate", "none")
+        if gate_mode == "failure":
+            # "full context succeeds where compression fails", with a margin in nats
+            margin = self.task_config.get("distill_margin", 0.0)
+            gate = float(nll_teacher.item() < nll_student.item() - margin)
+        elif gate_mode == "none":
+            gate = 1.0
+        else:
+            raise ValueError(f"unknown distill_gate: {gate_mode}")
+
+        log_p_teacher = F.log_softmax(teacher_ans, dim=-1)
+
+        if gate == 0.0:
+            # G0 measured the gate closed on ~90% of examples. 0 * KL has exactly zero
+            # gradient, so build no graph for it -- just log the value and hand back a
+            # constant zero. Saves the KL backward on the overwhelming majority of steps.
+            with torch.no_grad():
+                log_p_student = F.log_softmax(student_ans, dim=-1)
+                kl_value = (log_p_teacher.exp() * (log_p_teacher - log_p_student)).sum(-1).mean().item()
+            zero = torch.zeros((), device=student_logits.device, dtype=torch.float32)
+            return zero, {"kl": kl_value, "gate": 0.0,
+                          "nll_student": nll_student.item(), "nll_teacher": nll_teacher.item()}
+
+        log_p_student = F.log_softmax(student_ans, dim=-1)
+        kl = (log_p_teacher.exp() * (log_p_teacher - log_p_student)).sum(-1).mean()
+
+        info = {"kl": kl.item(), "gate": gate,
+                "nll_student": nll_student.item(), "nll_teacher": nll_teacher.item()}
+        return kl, info
+
+    @torch.no_grad()
+    def gate_stats(self, inputs):
+        """G0 diagnostic: gold-answer NLL of the compressed student vs the full-context
+        teacher on one example. No gradients, no loss -- used to choose the gate margin
+        before committing GPU hours to FGD."""
+        compress_token_ids, compress_token, end_idx, _, encoder_past_key_values, _ = self.compress(inputs)
+
+        lm_target_emb = self.decoder.model.embed_tokens(inputs["lm_targets"][:, :-1])
+        bsz, seq_len, emb_size = lm_target_emb.size()
+        expand_lm_token = self.special_tokens[1:2].unsqueeze(0).expand(bsz, 1, emb_size)
+        lm_emb = torch.cat([expand_lm_token, lm_target_emb], dim=1)
+        latter_position_ids = torch.arange(end_idx, end_idx + seq_len + 1, device=lm_target_emb.device).unsqueeze(0)
+        if self.task_config["use_pe"]:
+            outputs = self.decoder(inputs_embeds=lm_emb, position_ids=latter_position_ids,
+                                   past_key_values=encoder_past_key_values)
+        else:
+            outputs = self.decoder(inputs_embeds=lm_emb)
+        student_logits = outputs.logits[:, 1:].contiguous().view(-1, self.vocab_size)
+
+        target = inputs["instruction_target"].contiguous().view(-1).to(student_logits.device)
+        answer_mask = target != -100
+        n_answer = int(answer_mask.sum())
+        if n_answer == 0:
+            return None
+        gold = target[answer_mask]
+        student_ans = student_logits[answer_mask].float()
+        teacher_ans = self.teacher_answer_logits(inputs, answer_mask).float()
+        return {
+            "nll_student": F.cross_entropy(student_ans, gold).item(),
+            "nll_teacher": F.cross_entropy(teacher_ans, gold).item(),
+            "n_answer_tokens": n_answer,
+            "n_context_tokens": int(inputs["input_ids"].size(1)),
+        }
 
     def compute_num_chunks(self, total_length):
         assert total_length > 0
@@ -206,8 +324,24 @@ class CompressLLM(torch.nn.Module):
             role_embeds = (self.role_tokens[:current_mem_size,:]).unsqueeze(0).expand(bsz, current_mem_size, emb_size)
             mem_real_idx = mem_position_ids.squeeze(0) - 1 - start_idx
             encode_inputs_embeds.index_add_(1, mem_real_idx, role_embeds)
+
+            # ---- TGA: append the question after the chunk so the bidirectional encoder
+            # lets anchors attend to it. Only `mem_real_idx` positions are kept below, and
+            # those all lie inside the chunk, so the question never reaches the decoder.
+            # The anchor count comes from start_idx/end_idx alone, so the 15x ratio is
+            # unchanged. Off unless `encoder_query` is set.
+            query_len = 0
+            query_ids = inputs.get("query_ids") if self.task_config.get("encoder_query", False) else None
+            if query_ids is not None:
+                query_embeds = self.model.model.embed_tokens(query_ids)
+                query_len = query_embeds.size(1)
+                encode_inputs_embeds = torch.cat([encode_inputs_embeds, query_embeds], dim=1)
+                query_position_ids = torch.arange(
+                    end_idx + 1, end_idx + 1 + query_len, device=inputs_embeds.device).unsqueeze(0)
+                position_ids = torch.cat([position_ids, query_position_ids], dim=1)
+
             # 添加双向注意力
-            attention_mask = self.build_attention_mask_full_bidirectional(seq_len).unsqueeze(0).unsqueeze(1).to(inputs_embeds.device).to(torch.bfloat16)
+            attention_mask = self.build_attention_mask_full_bidirectional(seq_len + query_len).unsqueeze(0).unsqueeze(1).to(inputs_embeds.device).to(torch.bfloat16)
 
             if compress_token_ids is None:
                 compress_token_ids = mem_position_ids

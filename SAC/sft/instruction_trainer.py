@@ -71,6 +71,16 @@ def train(rank, args, world_size):
     # cal the total step
     training_steps = len(train_examples)//training_config["total_batch_size"]
 
+    # Optional step budget for the pilot. get_wsd_scheduler is warmup(300) + ConstantLR --
+    # there is no decay phase despite the name -- so truncating here is schedule-neutral:
+    # a max_train_steps run is exactly the first N steps of the full run.
+    max_train_steps = training_config.get("max_train_steps")
+    if max_train_steps and max_train_steps < training_steps:
+        training_steps = max_train_steps
+        if rank == 0:
+            logging.info(f"[INFO] max_train_steps={max_train_steps}: truncating to "
+                         f"{training_steps*training_config['total_batch_size']} examples")
+
     # drop last examples
     train_examples = train_examples[:training_steps*training_config["total_batch_size"]]
     if rank==0:
@@ -98,6 +108,9 @@ def train(rank, args, world_size):
 
     accumulation_steps = training_config["gradient_accumulation_steps"]
     checkpoint_step = training_config.get("checkpoint_step", 500)
+    # optimizer steps at which to keep a *named* adapter copy, so a mid-training
+    # checkpoint can be evaluated without disturbing the final one (plan-v2 T1)
+    extra_checkpoint_steps = set(training_config.get("extra_checkpoint_steps", []))
     step_num = 0
     info_list = []
     if args.resume:
@@ -109,7 +122,8 @@ def train(rank, args, world_size):
     ddp_model = DDP(model, device_ids=[rank] ,find_unused_parameters=True)
 
     # Instantiate the data loader
-    dataset = get_dataset(task_config["task_type"], train_examples, training_config['batch_size_per_device'])    
+    dataset = get_dataset(task_config["task_type"], train_examples, training_config['batch_size_per_device'],
+                          add_query_ids=task_config.get("encoder_query", False))
 
     loader = DataLoader(dataset, batch_size=None)
 
@@ -171,6 +185,12 @@ def train(rank, args, world_size):
     
             if step_num % (training_config["save_step"]*accumulation_steps) == 0:
                 save()
+            if rank == 0 and step_num % accumulation_steps == 0:
+                opt_step = step_num // accumulation_steps
+                if opt_step in extra_checkpoint_steps:
+                    name = os.path.join(args.work_dir, f"output/instruction_adapter_step{opt_step}.pt")
+                    save_adapter(ddp_model.module, save_path_and_name=name)
+                    logging.info(f"[INFO] extra checkpoint at optimizer step {opt_step} -> {name}")
             if rank == 0 and step_num % (checkpoint_step*accumulation_steps) == 0:
                 save_resume_checkpoint(args.work_dir, ddp_model.module, optimizer, scheduler, step_num, info_list,
                                        training_config, task_config, world_size, training_steps)

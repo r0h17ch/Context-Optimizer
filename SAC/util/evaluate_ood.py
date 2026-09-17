@@ -123,10 +123,11 @@ import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--work_dir", type=str, required=True, help="Directory containing the data files")
+parser.add_argument("--suffix", type=str, default="", help="artefact suffix, e.g. _stride10")
 args = parser.parse_args()
 
-input_path = os.path.join(args.work_dir, "output", "instruction_inference_results.json")
-output_path = os.path.join(args.work_dir, "output", "ood_subset_eval_results.json")
+input_path = os.path.join(args.work_dir, "output", f"instruction_inference_results{args.suffix}.json")
+output_path = os.path.join(args.work_dir, "output", f"ood_subset_eval_results{args.suffix}.json")
 
 sys.setrecursionlimit(10000)
 
