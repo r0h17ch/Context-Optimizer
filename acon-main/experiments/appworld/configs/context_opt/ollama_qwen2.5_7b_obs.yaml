@@ -1,0 +1,10 @@
+# ACON observation optimizer — compressor qwen2.5:7b
+# Threshold lowered from 1024 -> 256 so compression actually fires.
+type: "obs"
+model: "ollama/qwen2.5:7b"
+compressor_type: "full"
+prompts:
+  prompt_system: "system_prompt"
+  prompt_user: "prompt_user"
+obs_summarization_threshold: 256
+temperature: 0.0

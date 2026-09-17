@@ -1,0 +1,7 @@
+model: "ollama/qwen2.5:14b"
+baseline_strategy: "none"
+optimizer_type: "history"
+max_tokens: 8192
+threshold: 6000
+compress_ratio: 0.5
+

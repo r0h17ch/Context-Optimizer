@@ -1,0 +1,12 @@
+# ACON history optimizer — compressor qwen2.5:7b
+# Threshold lowered from 4096 -> 512 so compression actually fires on these task lengths.
+type: "history"
+model: "ollama/qwen2.5:7b"
+compressor_type: "full"
+prompts:
+  prompt_system: "system_prompt"
+  prompt_history_user: "prompt_history_v2"
+history_summarization_threshold: 512
+preserve_last_k_turns: 1
+history_summary_rule: "reset"
+temperature: 0.0
