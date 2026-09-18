@@ -1,6 +1,6 @@
 # ACON on AppWorld — Full Evaluation Results
 
-_Generated 2026-09-16 14:25 on `cse-sdpl-HP-Z4-G5-Workstation-Desktop-PC`._
+_Generated 2026-09-16 17:38 on `cse-sdpl-HP-Z4-G5-Workstation-Desktop-PC`._
 
 ## Setup
 
@@ -9,58 +9,52 @@ _Generated 2026-09-16 14:25 on `cse-sdpl-HP-Z4-G5-Workstation-Desktop-PC`._
 | Host | `cse-sdpl@100.79.174.22` (NVIDIA RTX 2000 Ada, 16 GB) |
 | Serving | Ollama, OpenAI-compatible endpoint `http://localhost:11434/v1` |
 | Agent model | `qwen2.5:14b` |
-| Compressor model | `qwen2.5:7b` |
+| Compressor models | `qwen2.5:7b` (primary), `llama3.1:8b` (comparison arm) |
 | Benchmark | AppWorld |
-| Split | `train_history_tiny`, fixed 8-task subset (identical across all arms) |
-| Max iterations / task | 12 |
+| Split | `train_history_tiny`, full split (38 tasks) |
+| Max iterations / task | 30 |
 | Seed | 42 |
 | Temperature | 0.0 |
 
-## Read this before the numbers
+## Limitations
 
-Three constraints materially limit what this run can show. They are properties of how the run
-was configured and of the host, not of ACON.
+State these in the report rather than letting a reader find them.
 
-1. **Sample size is 8 tasks.** A one-task difference is a 12.5 percentage-point swing. None of
-   the success-rate differences below are statistically meaningful. Token counts, which are
-   aggregated over thousands of requests, are the trustworthy signal here; success rates are not.
-2. **`max_iter` was 12.** Three of the eight tasks were separately measured needing 14, 19 and 21
-   iterations to succeed, so they cannot be solved by any arm under this cap. They are marked
-   `capped` in the per-task tables. This depresses every arm equally but compresses the range in
-   which ACON could demonstrate a gain.
-3. **Ollama served both models with a 4096-token context window.** Baseline agent inputs reach
-   ~100k cumulative tokens on long tasks, so individual requests exceeding 4096 tokens were
-   silently truncated by the server. A gap between ACON and baseline therefore partly measures
-   ACON avoiding that truncation, rather than compression helping on its own terms. This is not a
-   clean context-length experiment.
-
-A conclusive run needs the full 38-task split at `max_iter` 30 with a context window at or above
-the model maximum. That is roughly the 11-hour configuration in `run_acon_full_test.sh`.
+1. **Context window capped at 4096 tokens.** Ollama served both models with `num_ctx=4096`, the
+   largest that fits with the 14b agent and 7b compressor co-resident in 16 GB of VRAM. Baseline
+   agent inputs exceed this on long tasks, so those requests were truncated server-side. Part of
+   any ACON gain is therefore ACON keeping context under the window, not compression helping in
+   the abstract. This is the single biggest caveat on these numbers.
+2. **Compression thresholds deviate from the paper.** The stock thresholds (4096 history / 1024
+   observation) almost never fire on this split, whose history text runs 57-700 tokens. The
+   primary arms use 512 / 256 so the optimizer actually engages; the `acon_hist_q7b_t4096` arm
+   retains the paper default to quantify how often stock settings fire here.
+3. **Single seed (42), single split.** No variance estimate across seeds. Differences of one or
+   two tasks out of 38 should not be treated as significant.
 
 ## Headline results
 
-| Arm | Split | Method | Compressor | Tasks | Solved | Success rate | Avg reward | Avg iters | Agent input tokens | Wall clock |
+| Arm | Split | Method | Compressor | Tasks done | Solved | Success rate | Avg reward | Avg iters | Agent input tokens | Wall clock |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `fast_base` | train_history_tiny | Baseline (no context optimization) | — | 8 | 1 | **12.5%** | 0.125 | 11.0 | 269,935 | 15m 53s |
-| `fast_hist_q7b` | train_history_tiny | ACON history optimizer | qwen2.5:7b | 8 | 2 | **25.0%** | 0.250 | 10.8 | 232,749 | 14m 42s |
-| `fast_obs_q7b` | train_history_tiny | ACON observation optimizer | qwen2.5:7b | 8 | 1 | **12.5%** | 0.125 | 11.0 | 261,422 | 14m 33s |
+| `base_none` | train_history_tiny | Baseline (no context optimization) | — | 38/38 | 12 | **31.6%** | 0.316 | 23.7 | 2,972,376 | 121m 52s |
+| `acon_hist_q7b` | train_history_tiny | ACON history (threshold 512) | qwen2.5:7b | — | — | _not run_ | — | — | — | — |
+| `acon_hist_q7b_t4096` | train_history_tiny | ACON history (threshold 4096, paper default) | qwen2.5:7b | — | — | _not run_ | — | — | — | — |
+| `acon_obs_q7b` | train_history_tiny | ACON observation (threshold 256) | qwen2.5:7b | — | — | _not run_ | — | — | — | — |
+| `acon_uni_q7b` | train_history_tiny | ACON unified (history + observation) | qwen2.5:7b | — | — | _not run_ | — | — | — | — |
+| `acon_hist_l8b` | train_history_tiny | ACON history (threshold 512) | llama3.1:8b | — | — | _not run_ | — | — | — | — |
 
 ## Context-compression activity
 
-Compression only fires when the accumulated context crosses the optimizer's token threshold (512 for history, 256 for observations). Token counts for compressor traffic are approximate (~4 chars/token) since the compressor runs outside the agent's metered path.
+Compression only fires when the accumulated context crosses the optimizer's token threshold (512 or 4096 for history, 256 for observations -- see arm names). Token counts for compressor traffic are approximate (~4 chars/token) since the compressor runs outside the agent's metered path.
 
 | Arm | Compressor | Compression calls | Text in (approx tok) | Text out (approx tok) | Compression ratio |
 |---|---|---|---|---|---|
-| `fast_hist_q7b` | qwen2.5:7b | 31 | 34,320 | 5,117 | 0.149 |
-| `fast_obs_q7b` | qwen2.5:7b | 6 | 7,792 | 972 | 0.125 |
 
 ## Token economics (agent-side)
 
 | Arm | Requests | Input tokens | Output tokens | Total | Avg input/task |
 |---|---|---|---|---|---|
-| `fast_base` | 88 | 269,935 | 18,045 | 287,980 | 33,742 |
-| `fast_hist_q7b` | 86 | 232,749 | 15,300 | 248,049 | 29,094 |
-| `fast_obs_q7b` | 88 | 261,422 | 16,591 | 278,013 | 32,678 |
+| `base_none` | 902 | 2,972,376 | 190,214 | 3,162,590 | 78,220 |
 
 All models are served locally through Ollama, so monetary cost is $0.00 for every arm.
 
@@ -68,50 +62,52 @@ All models are served locally through Ollama, so monetary cost is $0.00 for ever
 
 | Arm | completed | max iterations | other |
 |---|---|---|---|
-| `fast_base` | 8 | 0 | 0 |
-| `fast_hist_q7b` | 8 | 0 | 0 |
-| `fast_obs_q7b` | 8 | 0 | 0 |
+| `base_none` | 38 | 0 | 0 |
 
 ## Per-task detail
 
-### `fast_base` — Baseline (no context optimization) (train_history_tiny)
+### `base_none` — Baseline (no context optimization) (train_history_tiny)
 
 | Task | Result | Reward | Iters | In tok | Out tok | Compress calls | Termination |
 |---|---|---|---|---|---|---|---|
-| `07b42fd_1` | PASS | 1.00 | 4 | 10,195 | 805 | 0 | task_completed |
-| `229360a_1` | FAIL | 0.00 | 12 (capped) | 40,847 | 8,329 | 0 | task_completed |
-| `22cc237_1` | FAIL | 0.00 | 12 (capped) | 41,541 | 612 | 0 | task_completed |
-| `22cc237_2` | FAIL | 0.00 | 12 (capped) | 35,166 | 765 | 0 | task_completed |
-| `22cc237_3` | FAIL | 0.00 | 12 (capped) | 35,211 | 720 | 0 | task_completed |
-| `27e1026_2` | FAIL | 0.00 | 12 (capped) | 36,349 | 3,878 | 0 | task_completed |
-| `287e338_2` | FAIL | 0.00 | 12 (capped) | 33,956 | 1,902 | 0 | task_completed |
-| `34d9492_1` | FAIL | 0.00 | 12 (capped) | 36,670 | 1,034 | 0 | task_completed |
-
-### `fast_hist_q7b` — ACON history optimizer, compressor `qwen2.5:7b` (train_history_tiny)
-
-| Task | Result | Reward | Iters | In tok | Out tok | Compress calls | Termination |
-|---|---|---|---|---|---|---|---|
-| `07b42fd_1` | PASS | 1.00 | 4 | 10,081 | 725 | 0 | task_completed |
-| `229360a_1` | FAIL | 0.00 | 12 (capped) | 34,274 | 5,442 | 10 | task_completed |
-| `22cc237_1` | FAIL | 0.00 | 12 (capped) | 33,243 | 733 | 3 | task_completed |
-| `22cc237_2` | FAIL | 0.00 | 12 (capped) | 32,608 | 624 | 2 | task_completed |
-| `22cc237_3` | PASS | 1.00 | 10 | 26,291 | 755 | 1 | task_completed |
-| `27e1026_2` | FAIL | 0.00 | 12 (capped) | 33,199 | 4,926 | 9 | task_completed |
-| `287e338_2` | FAIL | 0.00 | 12 (capped) | 30,635 | 729 | 2 | task_completed |
-| `34d9492_1` | FAIL | 0.00 | 12 (capped) | 32,418 | 1,366 | 4 | task_completed |
-
-### `fast_obs_q7b` — ACON observation optimizer, compressor `qwen2.5:7b` (train_history_tiny)
-
-| Task | Result | Reward | Iters | In tok | Out tok | Compress calls | Termination |
-|---|---|---|---|---|---|---|---|
-| `07b42fd_1` | PASS | 1.00 | 4 | 10,080 | 724 | 0 | task_completed |
-| `229360a_1` | FAIL | 0.00 | 12 (capped) | 40,050 | 6,219 | 0 | task_completed |
-| `22cc237_1` | FAIL | 0.00 | 12 (capped) | 36,261 | 1,105 | 3 | task_completed |
-| `22cc237_2` | FAIL | 0.00 | 12 (capped) | 36,260 | 705 | 2 | task_completed |
-| `22cc237_3` | FAIL | 0.00 | 12 (capped) | 35,247 | 899 | 0 | task_completed |
-| `27e1026_2` | FAIL | 0.00 | 12 (capped) | 34,480 | 2,804 | 0 | task_completed |
-| `287e338_2` | FAIL | 0.00 | 12 (capped) | 33,956 | 1,902 | 0 | task_completed |
-| `34d9492_1` | FAIL | 0.00 | 12 (capped) | 35,088 | 2,233 | 1 | task_completed |
+| `07b42fd_1` | PASS | 1.00 | 4 | 10,080 | 695 | 0 | task_completed |
+| `07b42fd_2` | PASS | 1.00 | 4 | 9,544 | 293 | 0 | task_completed |
+| `07b42fd_3` | PASS | 1.00 | 3 | 6,967 | 281 | 0 | task_completed |
+| `229360a_1` | FAIL | 0.00 | 30 (capped) | 85,961 | 5,268 | 0 | task_completed |
+| `229360a_3` | FAIL | 0.00 | 30 (capped) | 106,782 | 8,599 | 0 | task_completed |
+| `22cc237_1` | FAIL | 0.00 | 30 (capped) | 99,613 | 1,221 | 0 | task_completed |
+| `22cc237_2` | PASS | 1.00 | 19 | 55,126 | 1,819 | 0 | task_completed |
+| `22cc237_3` | PASS | 1.00 | 14 | 41,228 | 1,178 | 0 | task_completed |
+| `27e1026_1` | FAIL | 0.00 | 30 (capped) | 100,533 | 4,994 | 0 | task_completed |
+| `27e1026_2` | PASS | 1.00 | 5 | 13,164 | 639 | 0 | task_completed |
+| `287e338_2` | FAIL | 0.00 | 30 (capped) | 93,070 | 2,179 | 0 | task_completed |
+| `34d9492_1` | FAIL | 0.00 | 30 (capped) | 102,655 | 2,244 | 0 | task_completed |
+| `34d9492_2` | FAIL | 0.00 | 30 (capped) | 102,002 | 1,977 | 0 | task_completed |
+| `34d9492_3` | FAIL | 0.00 | 30 (capped) | 86,668 | 16,907 | 0 | task_completed |
+| `3c13f5a_1` | FAIL | 0.00 | 30 (capped) | 86,657 | 1,458 | 0 | task_completed |
+| `3c13f5a_2` | PASS | 1.00 | 21 | 73,849 | 8,805 | 0 | task_completed |
+| `3c13f5a_3` | FAIL | 0.00 | 30 (capped) | 97,552 | 3,802 | 0 | task_completed |
+| `60d0b5b_1` | FAIL | 0.00 | 30 (capped) | 112,455 | 12,344 | 0 | task_completed |
+| `60d0b5b_2` | FAIL | 0.00 | 30 (capped) | 108,251 | 3,056 | 0 | task_completed |
+| `76f2c72_2` | FAIL | 0.00 | 30 (capped) | 93,897 | 3,407 | 0 | task_completed |
+| `771d8fc_2` | FAIL | 0.00 | 30 (capped) | 114,053 | 15,801 | 0 | task_completed |
+| `771d8fc_3` | FAIL | 0.00 | 30 (capped) | 106,412 | 11,941 | 0 | task_completed |
+| `7d7fbf6_2` | FAIL | 0.00 | 30 (capped) | 92,864 | 4,194 | 0 | task_completed |
+| `7d7fbf6_3` | FAIL | 0.00 | 30 (capped) | 90,880 | 3,289 | 0 | task_completed |
+| `82e2fac_1` | FAIL | 0.00 | 30 (capped) | 109,944 | 768 | 0 | task_completed |
+| `82e2fac_2` | FAIL | 0.00 | 30 (capped) | 104,336 | 10,160 | 0 | task_completed |
+| `82e2fac_3` | FAIL | 0.00 | 30 (capped) | 98,254 | 4,279 | 0 | task_completed |
+| `b7a9ee9_2` | PASS | 1.00 | 7 | 20,295 | 637 | 0 | task_completed |
+| `b7a9ee9_3` | FAIL | 0.00 | 30 (capped) | 88,395 | 5,489 | 0 | task_completed |
+| `ccb4494_1` | PASS | 1.00 | 4 | 9,717 | 438 | 0 | task_completed |
+| `ce359b5_3` | PASS | 1.00 | 14 | 45,909 | 7,235 | 0 | task_completed |
+| `d0b1f43_2` | FAIL | 0.00 | 30 (capped) | 107,886 | 9,425 | 0 | task_completed |
+| `e3d6c94_1` | FAIL | 0.00 | 30 (capped) | 101,186 | 4,409 | 0 | task_completed |
+| `e3d6c94_3` | PASS | 1.00 | 22 | 74,345 | 7,983 | 0 | task_completed |
+| `e7a10f8_1` | FAIL | 0.00 | 30 (capped) | 99,269 | 6,412 | 0 | task_completed |
+| `e7a10f8_2` | FAIL | 0.00 | 30 (capped) | 103,785 | 8,225 | 0 | task_completed |
+| `e7a10f8_3` | FAIL | 0.00 | 30 (capped) | 106,542 | 8,158 | 0 | task_completed |
+| `e85d92a_1` | PASS | 1.00 | 5 | 12,250 | 205 | 0 | task_completed |
 
 ## Reproducing
 
