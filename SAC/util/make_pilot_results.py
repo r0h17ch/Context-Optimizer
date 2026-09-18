@@ -99,18 +99,35 @@ def main():
     w("## Headline\n")
     r2, r3 = bs0.get("r2_fgd"), bs0.get("r3_tga_fgd")
     if r2:
-        w(f'1. **FGD — failure-gated distillation — does not work.** {ci(r2, "ID")} ID against the '
-          "matched control; the interval contains zero and the point estimate is negative. The "
-          "gate itself is accurate (it concentrates on the student's failures 12× over its "
-          "successes), but the full-context teacher is *weaker* than the compressed student on "
-          "90.5% of examples, so acting on the signal buys nothing.")
-    if r3 and fin.get("r3_tga_fgd"):
-        f = fin["r3_tga_fgd"]
-        w(f'2. **TGA — task-guided anchors — works, and it is the result.** {ci(r3, "ID")} ID and '
-          f'{ci(r3, "OOD")} OOD over the control. At 5,000 steps it reaches '
+        line = (f'1. **FGD — failure-gated distillation — produces no net gain.** {ci(r2, "ID")} ID '
+                "against the matched control; the interval contains zero. The gate itself is both "
+                "accurate and effective — it concentrates on the student's failures 12× over its "
+                "successes, and it converts the ")
+        r1a = bs0.get("r1a_uniform_lambda1")
+        if r1a:
+            line += (f'{r1a["ID"]["delta"]:+.2f} ID **collapse** that ungated distillation causes '
+                     "into a statistical tie. But the full-context teacher is *weaker* than the "
+                     "compressed student on 90.5% of examples, and no gate can turn a weak teacher "
+                     "into a useful one.")
+        else:
+            line += "damage of ungated distillation into a statistical tie."
+        w(line)
+    best = "r3_tga" if fin.get("r3_tga") else "r3_tga_fgd"
+    rb = bs0.get(best)
+    if rb and fin.get(best):
+        f = fin[best]
+        name = "TGA alone" if best == "r3_tga" else "TGA + FGD"
+        w(f'2. **TGA — task-guided anchors — works, and it is the entire result.** ({name}) '
+          f'{ci(rb, "ID")} ID and {ci(rb, "OOD")} OOD over the control. At 5,000 steps it reaches '
           f'**ID {f[0][0]:.2f} / OOD {f[1][0]:.2f}**, beating the *published 20,000-step* SAC 15× '
           f'checkpoint by **{f[0][0]-r_id[0]:+.2f} ID / {f[1][0]-r_ood[0]:+.2f} OOD** on a quarter '
           "of the training budget.")
+        ontop = load(f"{SAC}/experiment/r3_tga_fgd/output/bootstrap_vs_r3tga.json")
+        if ontop:
+            w(f'3. **The two do not combine.** Adding FGD on top of TGA gives {ci(ontop, "ID")} ID '
+              f'and {ci(ontop, "OOD")} OOD — nothing, and if anything slightly negative. So FGD is '
+              "null in *both* configurations tested: alone against the control, and stacked on "
+              "TGA. The best-performing arm is also the simplest one.")
     w("")
 
     # ---------------- method ----------------
@@ -184,9 +201,47 @@ def main():
 
     # ---------------- finding 1 ----------------
     if r2:
-        w("## Finding 1 — FGD does not work\n")
+        w("## Finding 1 — the gate works; distillation still does not pay\n")
         w(f'Failure-gated distillation lands {ci(r2, "ID")} ID and {ci(r2, "OOD")} OOD against the '
-          "matched control. Both intervals contain zero and both point estimates are negative.\n")
+          "matched control. Both intervals contain zero and both point estimates are negative — "
+          "**FGD produces no net gain**.\n")
+        r1a = bs0.get("r1a_uniform_lambda1")
+        if r1a:
+            w("But that null hides the mechanism working. Ungated distillation from the same "
+              f'teacher is *catastrophic*: R1a (uniform KL, λ=1) lands {ci(r1a, "ID")} ID and '
+              f'{ci(r1a, "OOD")} OOD — a collapse, comfortably significant. The gate removes '
+              "almost all of that damage.\n")
+            w("| Arm | KL applied to | ΔID vs R0 | damage removed |")
+            w("|---|---|---|---|")
+            d_1a = r1a["ID"]["delta"]
+            w(f'| R1a · uniform KL, λ=1 | every example | {d_1a:+.2f} | — |')
+            r1m = bs0.get("r1_uniform_matched")
+            if r1m:
+                d_1 = r1m["ID"]["delta"]
+                w(f'| R1 · uniform KL, λ=ḡ | every example, matched mass | {d_1:+.2f} | '
+                  f'{100*(1-abs(d_1)/abs(d_1a)):.0f}% |')
+            d_2 = r2["ID"]["delta"]
+            w(f'| **R2 · gated KL, λ=1** | **the ~16% where the teacher wins** | **{d_2:+.2f}** | '
+              f'**{100*(1-abs(d_2)/abs(d_1a)):.0f}%** |')
+            w("")
+            w("Distillation from this teacher is clearly harmful at full strength, and both ways "
+              "of reducing its influence rescue almost all of it.\n")
+            r2r1 = load(f"{SAC}/experiment/r2_fgd/output/bootstrap_vs_r1.json")
+            w("**But read that table carefully — it does not show that *gating* is what helps.** "
+              "R1 reaches the same place by simply applying less KL uniformly (λ=ḡ), with no "
+              "gating at all. The comparison that isolates the gate's *selectivity* from its "
+              "*dose* is R2 vs R1, which holds the KL mass equal and changes only which examples "
+              "receive it")
+            if r2r1:
+                w(f'  — and that comes out {ci(r2r1, "ID")} ID, {ci(r2r1, "OOD")} OOD: '
+                  "indistinguishable.\n")
+            else:
+                w(".\n")
+            w("So the defensible claim is narrow: **the damage from a weak teacher scales with how "
+              "much KL you apply, and the gate is one of several ways to apply less.** Choosing "
+              "*which* examples to distil on — the actual ACON-derived contribution — buys nothing "
+              "measurable over simply turning the weight down. And neither route beats not "
+              "distilling at all.\n")
         ces = [(lbl, ce_final_decile(r)) for r, lbl in
                [("r0_sac", "R0 — no distillation"), ("r2_fgd", "R2 — gated KL"),
                 ("r1_uniform_matched", "R1 — uniform KL"), ("r1a_uniform_lambda1", "R1a — uniform KL λ=1")]]
@@ -239,13 +294,22 @@ def main():
         w("## Finding 2 — TGA works, and it is the result\n")
         w(f'Task-guided anchors give {ci(r3, "ID")} ID and {ci(r3, "OOD")} OOD over the matched '
           "control, both intervals clear of zero by a wide margin.\n")
-        r3v2 = load(f"{SAC}/experiment/r3_tga_fgd/output/bootstrap_vs_r2.json")
-        if r3v2:
-            w(f'Against R2 (FGD alone), isolating the TGA component: {ci(r3v2, "ID")} ID. Since FGD '
-              "alone is flat, essentially all of the gain is TGA")
-            w("  — but **R3b (TGA without FGD) has not been run**, so that attribution is an "
-              "inference, not a measurement. It is the single most valuable remaining run.\n"
-              if not fin.get("r3_tga") else ".\n")
+        ontop = load(f"{SAC}/experiment/r3_tga_fgd/output/bootstrap_vs_r3tga.json")
+        if fin.get("r3_tga") and ontop:
+            a, b = fin["r3_tga"], fin["r3_tga_fgd"]
+            w("**The attribution is measured, not inferred.** R3b runs TGA with the distillation "
+              "term switched off entirely:\n")
+            w("| Arm | ID F1 | OOD F1 | ΔID vs R0 | ΔOOD vs R0 |")
+            w("|---|---|---|---|---|")
+            rb_ = bs0.get("r3_tga")
+            w(f'| **R3b · TGA alone** | **{a[0][0]:.2f}** | **{a[1][0]:.2f}** | '
+              f'{ci(rb_, "ID")} | {ci(rb_, "OOD")} |')
+            w(f'| R3 · TGA + FGD | {b[0][0]:.2f} | {b[1][0]:.2f} | {ci(r3, "ID")} | {ci(r3, "OOD")} |')
+            w("")
+            w(f'Adding FGD on top of TGA is worth {ci(ontop, "ID")} ID and {ci(ontop, "OOD")} OOD — '
+              "indistinguishable from zero, with both point estimates negative. **All of the gain "
+              "is TGA.** The simplest arm in the study is also the best-performing one, which is "
+              "the form the claim should take.\n")
         w("### Caveats that must travel with this number\n")
         w("1. **Not like-for-like with question-agnostic SAC.** Query-conditioned memory cannot be "
           "reused across questions — the context must be recompressed per query. This is a "

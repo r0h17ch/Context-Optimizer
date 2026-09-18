@@ -1,6 +1,6 @@
 # SAC reproduction results — ours vs. original
 
-_Generated 2026-09-17 11:49 by `util/make_results_md.py`. Re-run it after each eval to refresh._
+_Generated 2026-09-17 22:10 by `util/make_results_md.py`. Re-run it after each eval to refresh._
 
 Paper: *Autoencoding-Free Context Compression for LLMs via Contextual Semantic Anchors* (ICLR 2026). Base model Llama-3.2-1B, MRQA benchmark, 6 in-domain (ID) and 6 out-of-domain (OOD) subsets.
 
@@ -74,7 +74,7 @@ Original = the authors' released result files for the eval-only runs (identical 
 
 ## SAC × ACON pilot
 
-The combined-method results (4 arms run so far) live in their own document: **[RESULTS_SAC_ACON.md](RESULTS_SAC_ACON.md)**. In short — failure-gated distillation (FGD) is a null result, task-guided anchors (TGA) are a large win. Threat analysis and run design are in [`plan-v2.md`](../plan-v2.md).
+The combined-method results (6 arms run so far) live in their own document: **[RESULTS_SAC_ACON.md](RESULTS_SAC_ACON.md)**. In short — failure-gated distillation (FGD) is a null result, task-guided anchors (TGA) are a large win. Threat analysis and run design are in [`plan-v2.md`](../plan-v2.md).
 
 ## Setup differences from the authors
 

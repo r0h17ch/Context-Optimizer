@@ -1,11 +1,12 @@
 # SAC × ACON — combined-method results
 
-_Generated 2026-09-17 11:49 by `util/make_pilot_results.py`._ For the SAC reproduction record see [RESULTS.md](RESULTS.md); for the threat analysis and run design see [`plan-v2.md`](../plan-v2.md).
+_Generated 2026-09-17 22:10 by `util/make_pilot_results.py`._ For the SAC reproduction record see [RESULTS.md](RESULTS.md); for the threat analysis and run design see [`plan-v2.md`](../plan-v2.md).
 
 ## Headline
 
-1. **FGD — failure-gated distillation — does not work.** -0.23 [-0.95, +0.47] ID against the matched control; the interval contains zero and the point estimate is negative. The gate itself is accurate (it concentrates on the student's failures 12× over its successes), but the full-context teacher is *weaker* than the compressed student on 90.5% of examples, so acting on the signal buys nothing.
-2. **TGA — task-guided anchors — works, and it is the result.** +8.66 [+7.66, +9.60] **\*** ID and +6.10 [+3.62, +8.96] **\*** OOD over the control. At 5,000 steps it reaches **ID 60.03 / OOD 44.71**, beating the *published 20,000-step* SAC 15× checkpoint by **+5.08 ID / +5.45 OOD** on a quarter of the training budget.
+1. **FGD — failure-gated distillation — produces no net gain.** -0.23 [-0.95, +0.47] ID against the matched control; the interval contains zero. The gate itself is both accurate and effective — it concentrates on the student's failures 12× over its successes, and it converts the -7.82 ID **collapse** that ungated distillation causes into a statistical tie. But the full-context teacher is *weaker* than the compressed student on 90.5% of examples, and no gate can turn a weak teacher into a useful one.
+2. **TGA — task-guided anchors — works, and it is the entire result.** (TGA alone) +8.76 [+7.75, +9.71] **\*** ID and +6.66 [+4.28, +9.40] **\*** OOD over the control. At 5,000 steps it reaches **ID 60.13 / OOD 45.28**, beating the *published 20,000-step* SAC 15× checkpoint by **+5.19 ID / +6.02 OOD** on a quarter of the training budget.
+3. **The two do not combine.** Adding FGD on top of TGA gives -0.10 [-0.80, +0.59] ID and -0.57 [-2.53, +1.56] OOD — nothing, and if anything slightly negative. So FGD is null in *both* configurations tested: alone against the control, and stacked on TGA. The best-performing arm is also the simplest one.
 
 ## What the two methods are
 
@@ -27,9 +28,9 @@ Read `vs R0` for the effect of a method change; read `vs original` for whether a
 | **R0 · SAC SFT** | matched control | **51.37** | **38.62** | (control) | (control) | -3.57 | -0.65 |
 | **R2 · + FGD (gated KL, λ=1)** | proposed | **51.15** | **38.47** | -0.23 [-0.95, +0.47] | -0.14 [-2.04, +1.77] | -3.80 | -0.79 |
 | **R1 · + uniform KL (λ=ḡ)** | ablation | **51.06** | **38.17** | -0.32 [-1.02, +0.44] | -0.45 [-2.11, +1.44] | -3.89 | -1.09 |
-| R1a · + uniform KL (λ=1) | literature | — | — | not run | not run | — | — |
+| **R1a · + uniform KL (λ=1)** | literature | **43.56** | **35.84** | -7.82 [-8.77, -6.88] **\*** | -2.78 [-4.82, -0.54] **\*** | -11.39 | -3.43 |
 | **R3 · + TGA + FGD** | query-aware | **60.03** | **44.71** | +8.66 [+7.66, +9.60] **\*** | +6.10 [+3.62, +8.96] **\*** | +5.08 | +5.45 |
-| R3b · + TGA alone | query-aware | — | — | not run | not run | — | — |
+| **R3b · + TGA alone** | query-aware | **60.13** | **45.28** | +8.76 [+7.75, +9.71] **\*** | +6.66 [+4.28, +9.40] **\*** | +5.19 | +6.02 |
 | _Original SAC 15× (20k steps)_ | _published_ | _54.95_ | _39.26_ | _—_ | _—_ | _—_ | _—_ |
 
 **\*** = the 95% CI of a paired bootstrap (1,000 resamples, stratified by subset, same examples for both arms) excludes 0. Every arm is single-seed, so this CI covers *example* variance only — not run-to-run variance. `vs original` carries no CI: it spans different training budgets and is descriptive.
@@ -45,18 +46,37 @@ With single-seed arms a bootstrap over examples cannot rule out run-to-run noise
 | R0 · SAC SFT | 49.68 | 51.37 | (control) | (control) | — |
 | R2 · + FGD (gated KL, λ=1) | 48.83 | 51.15 | -0.85 | -0.23 | yes |
 | R1 · + uniform KL (λ=ḡ) | 48.49 | 51.06 | -1.19 | -0.32 | yes |
+| R1a · + uniform KL (λ=1) | 41.63 | 43.56 | -8.05 | -7.82 | yes |
 | R3 · + TGA + FGD | 56.89 | 60.03 | +7.22 | +8.66 | yes |
+| R3b · + TGA alone | 56.47 | 60.13 | +6.79 | +8.76 | yes |
 
 | Run | OOD F1 @2.5k | OOD F1 @5k | Δ vs R0 @2.5k | Δ vs R0 @5k | sign holds? |
 |---|---|---|---|---|---|
 | R0 · SAC SFT | 39.05 | 38.62 | (control) | (control) | — |
 | R2 · + FGD (gated KL, λ=1) | 36.74 | 38.47 | -2.31 | -0.14 | yes |
 | R1 · + uniform KL (λ=ḡ) | 35.75 | 38.17 | -3.30 | -0.45 | yes |
+| R1a · + uniform KL (λ=1) | 34.06 | 35.84 | -4.99 | -2.78 | yes |
 | R3 · + TGA + FGD | 44.07 | 44.71 | +5.02 | +6.10 | yes |
+| R3b · + TGA alone | 42.53 | 45.28 | +3.48 | +6.66 | yes |
 
-## Finding 1 — FGD does not work
+## Finding 1 — the gate works; distillation still does not pay
 
-Failure-gated distillation lands -0.23 [-0.95, +0.47] ID and -0.14 [-2.04, +1.77] OOD against the matched control. Both intervals contain zero and both point estimates are negative.
+Failure-gated distillation lands -0.23 [-0.95, +0.47] ID and -0.14 [-2.04, +1.77] OOD against the matched control. Both intervals contain zero and both point estimates are negative — **FGD produces no net gain**.
+
+But that null hides the mechanism working. Ungated distillation from the same teacher is *catastrophic*: R1a (uniform KL, λ=1) lands -7.82 [-8.77, -6.88] **\*** ID and -2.78 [-4.82, -0.54] **\*** OOD — a collapse, comfortably significant. The gate removes almost all of that damage.
+
+| Arm | KL applied to | ΔID vs R0 | damage removed |
+|---|---|---|---|
+| R1a · uniform KL, λ=1 | every example | -7.82 | — |
+| R1 · uniform KL, λ=ḡ | every example, matched mass | -0.32 | 96% |
+| **R2 · gated KL, λ=1** | **the ~16% where the teacher wins** | **-0.23** | **97%** |
+
+Distillation from this teacher is clearly harmful at full strength, and both ways of reducing its influence rescue almost all of it.
+
+**But read that table carefully — it does not show that *gating* is what helps.** R1 reaches the same place by simply applying less KL uniformly (λ=ḡ), with no gating at all. The comparison that isolates the gate's *selectivity* from its *dose* is R2 vs R1, which holds the KL mass equal and changes only which examples receive it
+  — and that comes out +0.09 [-0.62, +0.80] ID, +0.30 [-1.71, +2.31] OOD: indistinguishable.
+
+So the defensible claim is narrow: **the damage from a weak teacher scales with how much KL you apply, and the gate is one of several ways to apply less.** Choosing *which* examples to distil on — the actual ACON-derived contribution — buys nothing measurable over simply turning the weight down. And neither route beats not distilling at all.
 
 The training loss explains why — final-decile cross-entropy:
 
@@ -65,6 +85,7 @@ The training loss explains why — final-decile cross-entropy:
 | R0 — no distillation | 0.8974 |
 | R2 — gated KL | 0.9136 |
 | R1 — uniform KL | 0.9586 |
+| R1a — uniform KL λ=1 | 1.2661 |
 
 Distillation from this teacher *hurts* the LM objective, and gating only limits the damage rather than turning it into a gain. The ordering `no distillation < gated < uniform` is exactly what a weak teacher predicts.
 
@@ -88,8 +109,14 @@ The gate anneals as the student improves but stabilises well clear of zero, so R
 
 Task-guided anchors give +8.66 [+7.66, +9.60] **\*** ID and +6.10 [+3.62, +8.96] **\*** OOD over the matched control, both intervals clear of zero by a wide margin.
 
-Against R2 (FGD alone), isolating the TGA component: +8.88 [+7.84, +9.95] **\*** ID. Since FGD alone is flat, essentially all of the gain is TGA
-  — but **R3b (TGA without FGD) has not been run**, so that attribution is an inference, not a measurement. It is the single most valuable remaining run.
+**The attribution is measured, not inferred.** R3b runs TGA with the distillation term switched off entirely:
+
+| Arm | ID F1 | OOD F1 | ΔID vs R0 | ΔOOD vs R0 |
+|---|---|---|---|---|
+| **R3b · TGA alone** | **60.13** | **45.28** | +8.76 [+7.75, +9.71] **\*** | +6.66 [+4.28, +9.40] **\*** |
+| R3 · TGA + FGD | 60.03 | 44.71 | +8.66 [+7.66, +9.60] **\*** | +6.10 [+3.62, +8.96] **\*** |
+
+Adding FGD on top of TGA is worth -0.10 [-0.80, +0.59] ID and -0.57 [-2.53, +1.56] OOD — indistinguishable from zero, with both point estimates negative. **All of the gain is TGA.** The simplest arm in the study is also the best-performing one, which is the form the claim should take.
 
 ### Caveats that must travel with this number
 
