@@ -11,6 +11,7 @@
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning,calc,fit,shapes.geometric}
 \usepackage{caption}
+\usepackage{graphicx}
 \usepackage{fancyhdr}
 \usepackage{titlesec}
 \usepackage[hidelinks]{hyperref}
@@ -41,11 +42,15 @@
 
 \begin{center}
 
-\vspace*{0.45cm}
+\vspace*{0.1cm}
+
+\includegraphics[height=2.6cm]{"png college logo".png}
+
+\vspace{0.35cm}
 
 {\Large\bfseries
 INDIAN INSTITUTE OF INFORMATION TECHNOLOGY\\
-DESIGN AND MANUFACTURING KURNOOL
+DESIGN AND MANUFACTURING KURNOOL\par
 }
 
 \vspace{0.25cm}
@@ -67,14 +72,14 @@ Department of Computer Science and Engineering
 % TODO: confirm final project title
 {\LARGE\bfseries
 Composing Context Compression\\
-for Long-Horizon LLM Agents
+for Long-Horizon LLM Agents\par
 }
 
 \vspace{0.35cm}
 
 {\large
 \textit{Controlled Composition and Critical-Fact Retention\\
-on top of ACON}
+on top of ACON}\par
 }
 
 \vspace{0.65cm}
@@ -85,7 +90,7 @@ on top of ACON}
 
 {\normalsize
 A report submitted in partial fulfilment of the requirements\\
-for the award of the degree of
+for the award of the degree of\par
 }
 
 \vspace{0.35cm}
@@ -111,9 +116,8 @@ Submitted by
 \renewcommand{\arraystretch}{1.35}
 
 \begin{tabular}{c l}
-\textbf{[ROLL NO. 1]} & \textbf{[STUDENT NAME 1]}\\
-\textbf{[ROLL NO. 2]} & \textbf{[STUDENT NAME 2]}\\
-\textbf{[ROLL NO. 3]} & \textbf{[STUDENT NAME 3]}
+\textbf{123CS0006} & \textbf{Ayush Rahate}\\
+\textbf{123CS0054} & \textbf{Rohit Chauhan}
 \end{tabular}
 
 \vspace{1.0cm}
@@ -125,7 +129,7 @@ Project Supervisor
 \vspace{0.3cm}
 
 {\large
-[SUPERVISOR NAME]
+Dr. N. SRINIVAS NAIK
 }
 
 \vfill
@@ -137,7 +141,7 @@ Project Supervisor
 {\normalsize
 Department of Computer Science and Engineering\\
 Indian Institute of Information Technology Design and Manufacturing Kurnool\\
-Kurnool, Andhra Pradesh -- 518008
+Kurnool, Andhra Pradesh -- 518008\par
 }
 
 \vspace{0.35cm}
@@ -228,108 +232,7 @@ combined setting in an appendix ablation only. ``Merged'': one memory holds both
 \end{table}
 
 % ============================================================
-% 3. RESEARCH GAPS
-% ============================================================
-\section{Research Gaps}
-
-\begin{enumerate}[label=(\alph*)]
-\item \textbf{Token savings do not become time savings.} ACON's compressor
-generates autoregressively, and rewriting the history invalidates the agent's
-KV cache, forcing the compressed prefix to be recomputed. ACON's own
-measurement on AppWorld (Qwen3-14B agent and compressor, one A100) gives a
-median of 73.24\,s per task without compression, 87.68\,s with history
-compression and 101.92\,s with observation compression \cite{ACON}.
-
-\item \textbf{The combined setting is schedule-confounded.} History compression
-fires when $|h_t|>T_{\mathrm{hist}}$. Once observations are compressed first,
-$|h_t|$ grows more slowly, so history compression fires at different steps and
-on already-pruned text. ACON's combined history+observation setting
-(45.8\% accuracy, versus 56.5\% and 53.6\% for history and observation
-compression alone \cite{ACON}) therefore changes two things at once and is not
-a clean composition of two treatments.
-
-\item \textbf{Compression quality is only measured indirectly.} ACON and SAC
-judge a compressor solely by downstream success or F1/EM. Neither measures
-whether the specific facts the agent will need survive compression, so a
-failure cannot be attributed to information loss rather than to the agent.
-\end{enumerate}
-
-% ============================================================
-% 4. PROBLEM STATEMENT
-% ============================================================
-\section{Problem Statement}
-
-Given a long-horizon agent with frozen weights, a history compressor and an
-observation compressor, determine how the two stages should be composed and
-scheduled so that the token savings of each are retained without lowering task
-success. The comparison between single-stage and composed settings must hold
-the compression schedule fixed, and compression quality must be measured
-directly, as the retention of task-critical state, rather than inferred only
-from task success.
-
-% ============================================================
-% 5. PROPOSED SOLUTION
-% ============================================================
-\section{Proposed Solution}
-
-We propose three changes to ACON's pipeline (Figure~\ref{fig:pipe}).
-
-\textbf{1. Decoupled composition order.} The observation compressor still
-produces a short $o'_t$ for the agent's immediate step, but the raw $o_t$ is
-retained in a side buffer. When history compression fires, it summarises the
-raw observations rather than the already-pruned ones, so information discarded
-by the observation stage can still enter the history summary.
-
-\textbf{2. Controlled compression schedule.} The trigger steps recorded in
-the history-only run are replayed unchanged in the composed run, instead of
-recomputing $|h_t|>T_{\mathrm{hist}}$ on pruned text. Single-stage and
-composed conditions then differ only in the treatment, which removes the
-confound of gap~(b).
-
-\textbf{3. Critical-Fact Retention (CFR).} From each uncompressed trajectory
-we extract state variables the agent later uses: access tokens, entity IDs,
-file paths and numeric values. With $F$ the set of such facts present before a
-compression call and $c$ the compressor output,
-\[
-\mathrm{CFR}=\frac{1}{|F|}\sum_{f\in F}\mathbf{1}\!\left[f \text{ appears verbatim in } c\right].
-\]
-CFR is an exact-match survival rate that can be computed per compression call
-without rerunning the agent, and correlated with task success.
-
-\begin{center}
-\begin{tikzpicture}[
-  font=\scriptsize,
-  bx/.style={draw, rounded corners=1.5pt, very thick, align=center,
-    text width=2.75cm, minimum height=0.82cm, inner sep=2pt},
-  arr/.style={-{Latex[length=2mm]}, line width=0.7pt},
-  env/.style={bx, fill=blue!7, draw=blue!55!black},
-  cmp/.style={bx, fill=green!8, draw=green!50!black},
-  ctl/.style={bx, fill=orange!10, draw=orange!70!black},
-  met/.style={bx, fill=violet!8, draw=violet!55!black}
-]
-\node[env] (o) {\textbf{Environment}\\raw observation $o_t$};
-\node[cmp, right=4mm of o] (oc) {\textbf{Obs.\ compressor}\\$o'_t$ for current step};
-\node[env, right=4mm of oc] (ag) {\textbf{Agent}\\acts on $h'_{t-1},o'_t$};
-\node[ctl, below=5mm of o] (buf) {\textbf{Raw buffer}\\keeps $o_1,\dots,o_t$};
-\node[cmp, right=4mm of buf] (hc) {\textbf{History compr.}\\$h'_t$ from raw $o$};
-\node[ctl, right=4mm of hc] (sch) {\textbf{Fixed schedule}\\replayed triggers};
-\node[met, right=4mm of sch] (cfr) {\textbf{CFR probe}\\facts in $o$ vs.\ $h'_t$};
-\draw[arr] (o)--(oc);
-\draw[arr] (oc)--(ag);
-\draw[arr] (o)--(buf);
-\draw[arr] (buf)--(hc);
-\draw[arr] (sch)--(hc);
-\draw[arr] (hc.north) -- ++(0,0.2) -| (ag.south);
-\draw[arr, dashed] (hc.south) -- ++(0,-0.2) -| (cfr.south);
-\end{tikzpicture}
-\end{center}
-\captionof{figure}{Proposed pipeline. The history compressor reads raw
-observations from a side buffer (orange), fires on a schedule fixed across
-conditions, and every call is scored by the CFR probe (violet).}
-\label{fig:pipe}
-
-% ============================================================
-% 6. IMPLEMENTATION AND RESULTS
+% 3. IMPLEMENTATION AND RESULTS
 % ============================================================
 \section{Implementation and Results}
 
@@ -347,7 +250,7 @@ compression solved 9 tasks against 7 and used 24.5\% fewer agent input tokens.
 The change is not uniform: it solved 5 tasks the baseline failed and failed 3
 the baseline solved. On the 8-task fast runs, both compression settings
 finished slightly sooner than the baseline, so the latency overhead ACON
-reports (gap (a)) did not appear at this scale.
+reports (Section~\ref{sec:gaps}, gap (a)) did not appear at this scale.
 
 \begin{table}[h]
 \centering
@@ -386,30 +289,266 @@ published macro-averaged MRQA scores to within 0.2 F1: at 15$\times$ we obtain
 54.98 in-domain / 39.25 out-of-domain F1 (published 54.95 / 39.26), and at
 5$\times$ 63.70 / 47.71 (published 63.63 / 47.72).
 
-\textbf{SAC$\times$ACON pilot (preliminary).} We trained two ACON-inspired
-variants of SAC for 5,000 steps at 15$\times$ (single seed, evaluated on
-6,786 examples) against a matched SAC control (51.37 / 38.62 F1).
-Failure-gated distillation, which distils from the full-context model only
-where compression fails, gave $-0.23$ in-domain F1 (95\% CI
-$[-0.95,+0.47]$), i.e.\ no effect. Task-guided anchors combined with
-failure-gated distillation reached 60.03 / 44.71 F1, a gain of $+8.66$
-$[+7.66,+9.60]$ in-domain. That variant sees the question during compression,
-so it is not directly comparable to question-agnostic SAC, and task-guided
-anchors alone have not yet been run.
+\textbf{SAC$\times$ACON pilot (preliminary).} We transferred two ACON ideas
+into SAC's latent space. \emph{Failure-gated distillation} (FGD) adds a KL term
+from the full-context decoder only on examples where it beats the compressed
+student. \emph{Task-guided anchors} (TGA) append the question to each encoder
+chunk so anchors can attend to it; only anchor KV is kept, so the compression
+ratio is unchanged. All arms start from the released 15$\times$ pretrain
+adapter, train for 5,000 steps with the same seed and data order, and differ
+only in the loss or input (Table~\ref{tab:sacacon}).
+
+\begin{table}[h]
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{p{0.30\textwidth}cccc}
+\toprule
+\textbf{Run} & \textbf{ID F1} & \textbf{OOD F1} &
+\textbf{$\Delta$ID vs.\ R0 (95\% CI)} & \textbf{$\Delta$OOD vs.\ R0 (95\% CI)}\\
+\midrule
+R0: SAC fine-tuning (matched control) & 51.37 & 38.62 & control & control\\
+R2: + FGD (gated KL, $\lambda=1$) & 51.15 & 38.47 & $-0.23$ $[-0.95,+0.47]$ & $-0.14$ $[-2.04,+1.77]$\\
+R1: + uniform KL (ablation) & 51.06 & 38.17 & $-0.32$ $[-1.02,+0.44]$ & $-0.45$ $[-2.11,+1.44]$\\
+R3: + TGA + FGD & \textbf{60.03} & \textbf{44.71} & $\mathbf{+8.66}$ $[+7.66,+9.60]$ & $\mathbf{+6.10}$ $[+3.62,+8.96]$\\
+\midrule
+\emph{Published SAC 15$\times$ (20,000 steps)} & \emph{54.95} & \emph{39.26} & & \\
+\bottomrule
+\end{tabular}
+\caption{SAC$\times$ACON pilot on MRQA (Llama-3.2-1B, 15$\times$, 5,000 steps,
+single seed, 6,786 evaluation examples). CIs are paired bootstraps over
+examples (1,000 resamples) and do not cover run-to-run variance.}
+\label{tab:sacacon}
+\end{table}
+
+FGD has no measurable effect: its intervals contain zero, and uniform KL is
+no better. A diagnostic run before training explains this: the zero-shot
+full-context teacher had a higher gold-answer NLL than the compressed student
+on 90.5\% of 2,000 training examples, so there is little to distil. TGA + FGD
+improves both in-domain and out-of-domain F1, and after a quarter of the
+training budget already exceeds the published 20,000-step checkpoint. Because
+the question is seen during compression, the memory cannot be reused across
+questions, so this is a separate query-aware setting rather than a direct
+improvement on SAC. TGA without FGD has not yet been run.
 
 % ============================================================
-% 7. CONCLUSION
+% 4. RESEARCH GAPS
 % ============================================================
-\section{Conclusion}
+\section{Research Gaps}\label{sec:gaps}
 
-We have reproduced SAC's published results and set up a local ACON pipeline
-on AppWorld. On the 18 tasks run so far, history compression solves more
-tasks with 24.5\% fewer agent input tokens. We identified three gaps in how
-context compressors are composed and evaluated: latency, schedule confounding
-and the lack of an intrinsic quality metric. Next, we will complete the
-38-task history and observation runs and add runs at the paper thresholds.
-We will then implement the raw-observation buffer, the fixed schedule and the
-CFR metric, and evaluate the composed pipeline across multiple seeds.
+\begin{enumerate}[label=(\alph*)]
+\item \textbf{Token savings do not become time savings.} ACON's compressor
+generates autoregressively, and rewriting the history invalidates the agent's
+KV cache, forcing the compressed prefix to be recomputed. ACON's own
+measurement on AppWorld (Qwen3-14B agent and compressor, one A100) gives a
+median of 73.24\,s per task without compression, 87.68\,s with history
+compression and 101.92\,s with observation compression \cite{ACON}.
+
+\item \textbf{The combined setting is schedule-confounded.} History compression
+fires when $|h_t|>T_{\mathrm{hist}}$. Once observations are compressed first,
+$|h_t|$ grows more slowly, so history compression fires at different steps and
+on already-pruned text. ACON's combined history+observation setting
+(44.6\% accuracy for ACON$_{\textsc{UTCO}}$, versus 56.5\% and 53.6\% for
+history and observation compression alone \cite{ACON}) therefore changes two
+things at once and is not a clean composition of two treatments.
+
+\item \textbf{Compression quality is only measured indirectly.} ACON and SAC
+judge a compressor solely by downstream success or F1/EM. Neither measures
+whether the specific facts the agent will need survive compression, so a
+failure cannot be attributed to information loss rather than to the agent.
+\end{enumerate}
+
+% ============================================================
+% 5. PROBLEM STATEMENT
+% ============================================================
+\section{Problem Statement}\label{sec:ps}
+
+Given a long-horizon agent with frozen weights, a history compressor and an
+observation compressor, determine how the two stages should be composed and
+scheduled so that the token savings of each are retained without lowering task
+success. The comparison between single-stage and composed settings must hold
+the compression schedule fixed, and compression quality must be measured
+directly, as the retention of task-critical state, rather than inferred only
+from task success.
+
+\textbf{Agent model.} Following \cite{ACON}, a task is a POMDP
+$\mathcal{E}=\langle\mathcal{S},\mathcal{A},\mathcal{O},\mathcal{T},R\rangle$.
+At step $t$ an agent $M$ with frozen parameters $\theta$ acts on the (possibly
+compressed) history $h'_{t-1}$ and the latest observation $o'_t$:
+\begin{equation}
+a_t = M\big(h'_{t-1},\,o'_t;\,\theta\big),\qquad
+h_t=(o_0,a_0,o_1,a_1,\dots,o_t,a_t).
+\label{eq:agent}
+\end{equation}
+
+\textbf{Compression operators.} The observation compressor $f_o$ and the
+history compressor $f_h$ act as
+\begin{equation}
+o'_t=\begin{cases} f_o(o_t,h'_{t-1}) & |o_t|>T_{\mathrm{obs}}\\ o_t & \text{otherwise}\end{cases}
+\qquad
+h'_t=\begin{cases} f_h(x_t) & t\in\mathcal{K}\\ h'_{t-1}\oplus(o'_t,a_t) & \text{otherwise},\end{cases}
+\label{eq:ops}
+\end{equation}
+where $\mathcal{K}\subseteq\{1,\dots,T\}$ is the set of trigger steps,
+$\oplus$ is concatenation and $x_t$ is the input given to $f_h$. With $s<t$ the
+previous trigger step, the two possible composition orders are
+\begin{equation}
+x_t^{\mathrm{seq}} = h'_s\oplus(o'_{s+1},a_{s+1},\dots,o'_t,a_t),
+\qquad
+x_t^{\mathrm{dec}} = h'_s\oplus(o_{s+1},a_{s+1},\dots,o_t,a_t).
+\label{eq:order}
+\end{equation}
+ACON uses $x^{\mathrm{seq}}$. A pipeline is the tuple
+$\pi=(f_o,f_h,x,\mathcal{K})$; we write $\pi_\varnothing$ for no compression,
+$\pi_h$ and $\pi_o$ for a single stage, and $\pi_{ho}$ for both.
+
+\textbf{Schedule confound.} In ACON the trigger set is determined by the
+pipeline itself:
+\begin{equation}
+\mathcal{K}(\pi)=\big\{\,t : |h'_{t-1}\oplus(o'_t,a_t)|>T_{\mathrm{hist}}\,\big\}.
+\label{eq:trigger}
+\end{equation}
+Because $|o'_t|\le|o_t|$, in general $\mathcal{K}(\pi_{ho})\neq\mathcal{K}(\pi_h)$.
+Let $\Delta(\pi)=\mathbb{E}[R(\pi)]-\mathbb{E}[R(\pi_\varnothing)]$ and define
+the interaction
+\begin{equation}
+I=\Delta(\pi_{ho})-\Delta(\pi_h)-\Delta(\pi_o).
+\label{eq:interaction}
+\end{equation}
+For ACON$_{\textsc{UTCO}}$ on AppWorld \cite{ACON},
+$\Delta(\pi_h)=+0.5$, $\Delta(\pi_o)=-2.4$ and $\Delta(\pi_{ho})=-11.4$
+points, so $I=-9.5$. Under Eq.~\eqref{eq:trigger}, $I$ mixes the effect of
+composing $f_o$ with $f_h$ and the effect of the shifted triggers, and the two
+cannot be separated.
+
+\textbf{Cost and latency.} Token cost, peak context and wall-clock latency are
+\begin{equation}
+C(\pi)=\sum_{t=1}^{T}\big(|h'_{t-1}|+|o'_t|\big),\qquad
+P(\pi)=\max_{t}\big(|h'_{t-1}|+|o'_t|\big),
+\label{eq:cost}
+\end{equation}
+\begin{equation}
+L(\pi)=\sum_{t=1}^{T}\ell_M\big(h'_{t-1},o'_t\big)
++\sum_{t\in\mathcal{K}}\ell_{f_h}(x_t)
++\sum_{t:\,|o_t|>T_{\mathrm{obs}}}\ell_{f_o}(o_t),
+\label{eq:latency}
+\end{equation}
+where $\ell$ denotes per-call latency. $\ell_M$ includes re-encoding the prefix
+after each trigger, since rewriting $h'_t$ invalidates the KV cache. The last
+two sums are overhead that $C(\pi)$ does not capture.
+
+\textbf{Critical-fact retention.} Let $V(\cdot)$ extract state variables
+(access tokens, entity IDs, file paths, numeric values) from text, and let
+$a^{\varnothing}_{1:T}$ be the actions of the uncompressed reference run. The
+facts at stake in trigger $t$ and the retention rate are
+\begin{equation}
+F_t=V(x_t)\cap\bigcup_{t'}V\big(a^{\varnothing}_{t'}\big),\qquad
+\mathrm{CFR}(\pi)=\frac{\sum_{t\in\mathcal{K}}\sum_{v\in F_t}\mathbf{1}\big[v\sqsubseteq h'_t\big]}{\sum_{t\in\mathcal{K}}|F_t|},
+\label{eq:cfr}
+\end{equation}
+where $v\sqsubseteq h'_t$ denotes an exact (verbatim) occurrence of $v$ in $h'_t$.
+
+\textbf{Formal problem.} For $\lambda,\mu\ge0$ and tolerance $\varepsilon\ge0$, find
+\begin{equation}
+\pi^{*}=\arg\max_{x\in\{x^{\mathrm{seq}},x^{\mathrm{dec}}\},\;\mathcal{K}}
+\;\mathbb{E}\big[R(\pi)\big]-\lambda\,\mathbb{E}\big[C(\pi)\big]-\mu\,\mathbb{E}\big[L(\pi)\big]
+\label{eq:objective}
+\end{equation}
+\[
+\text{s.t.}\quad
+\mathbb{E}[R(\pi)]\ge\mathbb{E}[R(\pi_\varnothing)]-\varepsilon,\qquad
+C(\pi_{ho})\le\min\{C(\pi_h),C(\pi_o)\},\qquad
+\mathcal{K}(\pi_{ho})=\mathcal{K}(\pi_h)\ \text{when comparing}\ \pi_{ho}\ \text{with}\ \pi_h,
+\]
+and report $\mathrm{CFR}(\pi)$ alongside $\mathbb{E}[R(\pi)]$ to test whether
+loss of reward is explained by loss of critical facts.
+
+% ============================================================
+% 6. PROPOSED SOLUTION
+% ============================================================
+\section{Proposed Solution}
+
+We propose three changes to ACON's pipeline, each addressing one term of the
+problem in Section~\ref{sec:ps} (Figure~\ref{fig:pipe}).
+
+\textbf{1. Decoupled composition order.} The observation compressor still
+produces a short $o'_t$ for the agent's immediate step, but the raw $o_t$ is
+retained in a side buffer and $f_h$ receives $x_t^{\mathrm{dec}}$ instead of
+$x_t^{\mathrm{seq}}$ (Eq.~\eqref{eq:order}). If $f_o$ only deletes content,
+then $V(o'_t)\subseteq V(o_t)$, so $F_t$ under $x^{\mathrm{dec}}$ contains
+$F_t$ under $x^{\mathrm{seq}}$: facts dropped by the observation stage can
+still enter the history summary.
+
+\textbf{2. Controlled compression schedule.} We record
+$\mathcal{K}^{h}=\mathcal{K}(\pi_h)$ from the history-only run and replay it,
+setting $\mathcal{K}(\pi_{ho}):=\mathcal{K}^{h}$ instead of recomputing
+Eq.~\eqref{eq:trigger} on pruned text. With the schedule fixed, $\pi_h$ and
+$\pi_{ho}$ differ only in $f_o$, so the interaction $I$ in
+Eq.~\eqref{eq:interaction} reflects composition alone.
+
+\textbf{3. Critical-Fact Retention (CFR).} We implement $V(\cdot)$ with
+pattern extractors for AppWorld's tokens, IDs, paths and numbers, and compute
+Eq.~\eqref{eq:cfr} offline for every compressor call, with no additional agent
+rollouts. Across tasks we then measure the rank correlation
+$\rho\big(\mathrm{CFR},R\big)$ to test whether CFR predicts task success, and
+compare $\mathrm{CFR}$ under $x^{\mathrm{seq}}$ and $x^{\mathrm{dec}}$.
+
+\begin{center}
+\begin{tikzpicture}[
+  font=\scriptsize,
+  bx/.style={draw, rounded corners=1.5pt, very thick, align=center,
+    text width=2.75cm, minimum height=0.82cm, inner sep=2pt},
+  arr/.style={-{Latex[length=2mm]}, line width=0.7pt},
+  env/.style={bx, fill=blue!7, draw=blue!55!black},
+  cmp/.style={bx, fill=green!8, draw=green!50!black},
+  ctl/.style={bx, fill=orange!10, draw=orange!70!black},
+  met/.style={bx, fill=violet!8, draw=violet!55!black}
+]
+\node[env] (o) {\textbf{Environment}\\raw observation $o_t$};
+\node[cmp, right=4mm of o] (oc) {\textbf{Obs.\ compressor}\\$o'_t$ for current step};
+\node[env, right=4mm of oc] (ag) {\textbf{Agent}\\acts on $h'_{t-1},o'_t$};
+\node[ctl, below=5mm of o] (buf) {\textbf{Raw buffer}\\keeps $o_1,\dots,o_t$};
+\node[cmp, right=4mm of buf] (hc) {\textbf{History compr.}\\$h'_t$ from raw $o$};
+\node[ctl, right=4mm of hc] (sch) {\textbf{Fixed schedule}\\replayed triggers};
+\node[met, right=4mm of sch] (cfr) {\textbf{CFR probe}\\facts in $o$ vs.\ $h'_t$};
+\draw[arr] (o)--(oc);
+\draw[arr] (oc)--(ag);
+\draw[arr] (o)--(buf);
+\draw[arr] (buf)--(hc);
+\draw[arr] (sch)--(hc);
+\draw[arr] (hc.north) -- ++(0,0.2) -| (ag.south);
+\draw[arr, dashed] (hc.south) -- ++(0,-0.2) -| (cfr.south);
+\end{tikzpicture}
+\end{center}
+\captionof{figure}{Proposed pipeline. The history compressor reads raw
+observations from a side buffer (orange), fires on a schedule fixed across
+conditions, and every call is scored by the CFR probe (violet).}
+\label{fig:pipe}
+
+% ============================================================
+% 7. FUTURE WORK
+% ============================================================
+\section{Future Work}
+
+\begin{itemize}
+\item \textbf{Complete the ACON runs.} Finish the 38-task history-compression
+run, and run observation compression, combined history+observation
+compression, the paper thresholds ($T_{\mathrm{hist}}=4096$,
+$T_{\mathrm{obs}}=1024$) and the \texttt{llama3.1:8b} compressor on the same
+split.
+\item \textbf{Implement the proposed pipeline.} Add the raw-observation
+buffer ($x^{\mathrm{dec}}$), schedule replay ($\mathcal{K}(\pi_{ho}):=\mathcal{K}^{h}$)
+and the CFR extractor, then estimate $I$ under both composition orders with
+the schedule fixed.
+\item \textbf{Measure latency directly.} Log $\ell_M$, $\ell_{f_h}$ and
+$\ell_{f_o}$ per call to decompose $L(\pi)$ in Eq.~\eqref{eq:latency},
+including prefix re-encoding after each history compression.
+\item \textbf{Strengthen the evidence.} Use at least three seeds per setting,
+raise the served context window above 4096 tokens so baseline prompts are not
+truncated, and, for SAC$\times$ACON, run TGA alone together with the 5$\times$
+and 51$\times$ ratios.
+\end{itemize}
 
 \begin{thebibliography}{99}
 
