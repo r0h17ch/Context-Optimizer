@@ -526,14 +526,14 @@ TGA alone and the $5\times$/$51\times$ ratios.
 
 % ============================== 14. REFERENCES
 \section*{References}
-\setbeamertemplate{bibliography item}[online]
+\setbeamertemplate{bibliography item}[text]
 \begin{frame}{References}
 \scriptsize
 \begin{thebibliography}{9}
-\bibitem{ACON} M. Kang, W.-N. Chen, D. Han, H. A. Inan, L. Wutschitz, Y. Chen,
+\bibitem{ACON} \textcolor{cmpgreen}{\textbf{$\bigstar$\,Used}} M. Kang, W.-N. Chen, D. Han, H. A. Inan, L. Wutschitz, Y. Chen,
 R. Sim, and S. Rajmohan, ``ACON: Optimizing Context Compression for
 Long-horizon LLM Agents,'' \emph{ICML}, PMLR 306, 2026.
-\bibitem{SAC} X. Liu, R. Zhao, P. Huang, X. Liu, J. Xiao, C. Xiao, T. Xiao,
+\bibitem{SAC} \textcolor{cmpgreen}{\textbf{$\bigstar$\,Used}} X. Liu, R. Zhao, P. Huang, X. Liu, J. Xiao, C. Xiao, T. Xiao,
 S. Gao, Z. Yu, and J. Zhu, ``Autoencoding-Free Context Compression for LLMs via
 Contextual Semantic Anchors,'' \emph{ICLR}, 2026.
 \bibitem{SWEPruner} Y. Wang, Y. Shi, M. Yang, R. Zhang, S. He, H. Lian,
@@ -546,10 +546,12 @@ Models,'' \emph{EMNLP}, pp.~13358--13376, 2023.
 Reasoning for Efficient Long-Horizon Agents,'' arXiv:2506.15841, 2025.
 \bibitem{MemAgent} H. Yu et al., ``MemAgent: Reshaping Long-Context LLM with
 Multi-Conv RL-based Memory Agent,'' \emph{ICLR}, 2026.
-\bibitem{AppWorld} H. Trivedi et al., ``AppWorld: A Controllable World of Apps
+\bibitem{AppWorld} \textcolor{cmpgreen}{\textbf{$\bigstar$\,Used}} H. Trivedi et al., ``AppWorld: A Controllable World of Apps
 and People for Benchmarking Interactive Coding Agents,'' \emph{ACL},
 pp.~16022--16076, 2024.
 \end{thebibliography}
+\vspace{0.1cm}
+{\scriptsize\textcolor{cmpgreen}{$\bigstar$\,\textbf{Used}} = used directly in our work: ACON is the base method (reproduced), SAC is reproduced and extended (SAC\,$\times$\,ACON), AppWorld is our benchmark.}
 \end{frame}
 
 % ============================== 15. THANK YOU
