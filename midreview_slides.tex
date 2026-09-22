@@ -197,8 +197,9 @@ Each method compresses \textbf{one} kind of context and is judged only by task s
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{lcccccc}
 \toprule
-\textbf{Property} & \textbf{ACON} & \textbf{SAC} & \textbf{SWE-Pruner} &
-\textbf{LLMLingua} & \textbf{MEM1/MemAgent} & \textbf{Proposed}\\
+\textbf{Property} & \textbf{ACON}~\cite{ACON} & \textbf{SAC}~\cite{SAC} &
+\textbf{SWE-Pruner}~\cite{SWEPruner} & \textbf{LLMLingua}~\cite{LLMLingua} &
+\textbf{MEM1/MemAgent}~\cite{MEM1,MemAgent} & \textbf{Proposed}\\
 \midrule
 Output form              & Text & KV cache & Text lines & Text tokens & Text memory & Text\\
 Agent weights frozen     & Yes  & Yes & Yes & Yes & \textcolor{red!70!black}{No} & Yes\\
@@ -214,7 +215,7 @@ Intrinsic quality metric & No   & No  & No  & No  & No & \textcolor{cmpgreen}{\t
 \begin{column}{0.88\textwidth}
 \footnotesize
 \begin{itemize}
-  \item ``Partly'': ACON reports a combined setting in an appendix ablation only.
+  \item ``Partly'': ACON~\cite{ACON} reports a combined setting in an appendix ablation only.
   \item ``Merged'': a single learned memory holds both history and observations.
   \item Every method compresses \emph{one} kind of context --- how the stages
         \textbf{interact} is unstudied.
@@ -224,8 +225,8 @@ Intrinsic quality metric & No   & No  & No  & No  & No & \textcolor{cmpgreen}{\t
 \end{frame}
 
 % ============================== THEORY: ACON AND SAC
-\section{Theory: ACON and SAC}
-\begin{frame}{Theory (1/2): ACON --- Agent Context Optimization}
+\section{ACON and SAC}
+\begin{frame}{ACON --- Agent Context Optimization}
 \begin{columns}[T]
 \begin{column}{0.46\textwidth}
 \begin{block}{Threshold-triggered compression}
@@ -273,9 +274,17 @@ o'_t=\begin{cases} f(o_t,h_{t-1};\phi,\mathcal{P}_{\mathrm{obs}}) & |o_t|>T_{\ma
 \end{block}
 \end{column}
 \end{columns}
+
+\vspace{0.12cm}
+{\scriptsize
+\textbf{Paper:} M.~Kang \emph{et al.}, ``ACON: Optimizing Context Compression
+for Long-horizon LLM Agents,'' \emph{ICML} 2026~\cite{ACON}. Model-agnostic
+(no agent weight updates); evaluated on AppWorld~\cite{AppWorld}, OfficeBench
+and 8-objective QA; code released by Microsoft. \textbf{This is our base
+paper.}}
 \end{frame}
 
-\begin{frame}{Theory (2/2): SAC --- Contextual Semantic Anchors}
+\begin{frame}{SAC --- Contextual Semantic Anchors}
 \begin{center}
 \begin{tikzpicture}[
   font=\scriptsize,
@@ -330,6 +339,13 @@ o'_t=\begin{cases} f(o_t,h_{t-1};\phi,\mathcal{P}_{\mathrm{obs}}) & |o_t|>T_{\ma
 \end{block}
 \end{column}
 \end{columns}
+
+\vspace{0.12cm}
+{\scriptsize
+\textbf{Paper:} X.~Liu \emph{et al.}, ``Autoencoding-Free Context Compression
+for LLMs via Contextual Semantic Anchors,'' \emph{ICLR} 2026~\cite{SAC}.
+Evaluated on MRQA (6 in-domain, 6 out-of-domain sets) at $5\times/15\times/51\times$;
+checkpoints and data caches released, which is what let us reproduce it.}
 \end{frame}
 
 % ============================== 9-11. IMPLEMENTATION AND RESULTS
@@ -457,6 +473,71 @@ R3: $+$ TGA $+$ FGD                    & \textbf{60.03} & \textbf{44.71} &
 \end{columns}
 \end{frame}
 
+% ============================== PROPOSED WORK
+\section{Proposed Work}
+\begin{frame}{Proposed Work}
+\begin{center}
+\begin{tikzpicture}[
+  font=\scriptsize,
+  bx/.style={draw, rounded corners=2pt, very thick, align=center,
+    text width=2.35cm, minimum height=0.85cm, inner sep=2pt},
+  arr/.style={-{Latex[length=2mm]}, line width=0.8pt},
+  env/.style={bx, fill=envblue!8,  draw=envblue},
+  cmp/.style={bx, fill=cmpgreen!8, draw=cmpgreen},
+  ctl/.style={bx, fill=ctlorange!12, draw=ctlorange},
+  met/.style={bx, fill=metviolet!8, draw=metviolet}]
+\node[env] (o) {\textbf{Environment}\\raw observation $o_t$};
+\node[cmp, right=6mm of o]  (oc) {\textbf{Obs.\ compressor}\\$o'_t$ for this step};
+\node[env, right=6mm of oc] (ag) {\textbf{Agent}\\acts on $h'_{t-1},o'_t$};
+\node[ctl, below=7mm of o]  (buf){\textbf{Raw buffer}\\keeps $o_1,\dots,o_t$};
+\node[cmp, right=6mm of buf](hc) {\textbf{History compr.}\\$h'_t$ from \emph{raw} $o$};
+\node[ctl, right=6mm of hc] (sch){\textbf{Fixed schedule}\\replayed triggers};
+\node[met, right=6mm of sch](cfr){\textbf{CFR probe}\\facts in $o$ vs.\ $h'_t$};
+\draw[arr] (o)--(oc);
+\draw[arr] (oc)--(ag);
+\draw[arr] (o)--(buf);
+\draw[arr] (buf)--(hc);
+\draw[arr] (sch)--(hc);
+\draw[arr] (hc.north) -- ++(0,0.25) -| (ag.south);
+\draw[arr, dashed, metviolet] (hc.south) -- ++(0,-0.25) -| (cfr.south);
+\end{tikzpicture}
+\end{center}
+\vspace{0.1cm}
+\begin{columns}[T]
+\begin{column}{0.325\textwidth}
+\begin{block}{1. Decoupled order}
+\scriptsize
+$f_h$ reads the \emph{raw} observations from a side buffer
+($x^{\mathrm{dec}}$), not the pruned ones. If $f_o$ only deletes content,
+$V(o'_t)\subseteq V(o_t)$, so facts dropped by $f_o$ can still reach the
+summary.
+\end{block}
+\end{column}
+\begin{column}{0.325\textwidth}
+\begin{block}{2. Fixed schedule}
+\scriptsize
+Replay the history-only triggers, $\mathcal{K}(\pi_{ho}):=\mathcal{K}^{h}$,
+instead of recomputing them on pruned text. Then $\pi_h$ and $\pi_{ho}$ differ
+only in $f_o$, so $I$ measures composition alone.
+\end{block}
+\end{column}
+\begin{column}{0.325\textwidth}
+\begin{block}{3. CFR metric}
+\scriptsize
+\vspace{-0.2cm}
+\[
+\mathrm{CFR}=\frac{\sum_{t\in\mathcal{K}}\sum_{v\in F_t}\mathbf{1}[v\sqsubseteq h'_t]}
+{\sum_{t\in\mathcal{K}}|F_t|}
+\]
+\vspace{-0.25cm}
+
+Verbatim survival of task-critical IDs, tokens, paths and numbers; computed
+offline, no extra rollouts.
+\end{block}
+\end{column}
+\end{columns}
+\end{frame}
+
 % ============================== 12. RESEARCH GAPS
 \section{Research Gaps}
 \begin{frame}{Research Gaps}
@@ -490,17 +571,14 @@ R3: $+$ TGA $+$ FGD                    & \textbf{60.03} & \textbf{44.71} &
 \begin{frame}{Future Work}
 \begin{columns}[T]
 \begin{column}{0.49\textwidth}
-\begin{block}{Proposed pipeline}
+\begin{block}{Build the proposed pipeline}
 \footnotesize
 \begin{enumerate}
-  \item \textbf{Decoupled order:} $f_h$ reads \emph{raw} observations from a
-        side buffer ($x^{\mathrm{dec}}$), so facts dropped by $f_o$ can
-        still reach the summary
-  \item \textbf{Controlled schedule:} replay the history-only triggers,
-        $\mathcal{K}(\pi_{ho}):=\mathcal{K}^{h}$, so $I$ measures composition
-        alone
-  \item \textbf{Critical-Fact Retention (CFR):} fraction of task-critical
-        IDs, tokens, paths and numbers kept verbatim, computed offline
+  \item Raw-observation buffer ($x^{\mathrm{dec}}$)
+  \item Schedule replay, $\mathcal{K}(\pi_{ho}):=\mathcal{K}^{h}$
+  \item CFR extractor for AppWorld IDs, tokens, paths and numbers
+  \item Re-estimate the interaction $I$ under \emph{both} composition orders
+        with the schedule held fixed
 \end{enumerate}
 \end{block}
 \end{column}
