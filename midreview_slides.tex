@@ -86,26 +86,38 @@ How should \textbf{history} and \textbf{observation} compression be
 \textbf{combined} in a frozen LLM agent, so that we keep the token savings of
 both \textbf{without losing task success}?
 \end{block}
-\vspace{0.2cm}
+\vspace{-0.1cm}
 \begin{columns}[T]
 \begin{column}{0.47\textwidth}
-\small
-\textbf{Requirements}
+\begin{alertblock}{Why it matters}
+\footnotesize
+\begin{itemize}
+  \item Context grows every step $\Rightarrow$ memory cost, distraction
+  \item ACON's combined setting: \textbf{$-$11.4} points, worse than either stage
+\end{itemize}
+\end{alertblock}
+\begin{block}{Requirements}
+\footnotesize
 \begin{itemize}
   \item Agent weights stay \textbf{frozen}
-  \item Compare settings under the \textbf{same compression schedule}
-  \item Measure compression quality \textbf{directly}, not only via success
+  \item Same \textbf{compression schedule} across settings
+  \item Measure compression quality \textbf{directly}
 \end{itemize}
+\end{block}
 \end{column}
 \begin{column}{0.51\textwidth}
-\small
-\textbf{Objective}
+\begin{block}{Formulation}
+\footnotesize
+Agent step:\; $a_t = M(h'_{t-1},\,o'_t;\,\theta)$\\[2pt]
+Pipeline:\; $\pi=(f_o,\,f_h,\,x,\,\mathcal{K})$ --- compressors, input order,
+trigger steps
 \[
 \max_{\pi}\;
 \mathbb{E}[R(\pi)]-\lambda\,\mathbb{E}[C(\pi)]-\mu\,\mathbb{E}[L(\pi)]
 \]
-\centering\footnotesize
-$R$: task reward \quad $C$: token cost \quad $L$: latency
+s.t.\ \ $\mathbb{E}[R(\pi)]\ge\mathbb{E}[R(\pi_\varnothing)]-\varepsilon,\;\;C(\pi_{ho})\le\min\{C(\pi_h),C(\pi_o)\}$\par\smallskip
+\centering $R$: task reward \quad $C$: token cost \quad $L$: latency
+\end{block}
 \end{column}
 \end{columns}
 \end{frame}
