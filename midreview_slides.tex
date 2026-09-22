@@ -76,96 +76,108 @@
 \end{frame}
 }
 
-% ============================== 2. OUTLINE
-\begin{frame}{Outline}
-  \tableofcontents
+
+% ============================== 3. PROBLEM STATEMENT
+\section{Problem Statement}
+\begin{frame}{Problem Statement}
+\begin{block}{Problem}
+\small
+How should \textbf{history} and \textbf{observation} compression be
+\textbf{combined} in a frozen LLM agent, so that we keep the token savings of
+both \textbf{without losing task success}?
+\end{block}
+\vspace{0.2cm}
+\begin{columns}[T]
+\begin{column}{0.47\textwidth}
+\small
+\textbf{Requirements}
+\begin{itemize}
+  \item Agent weights stay \textbf{frozen}
+  \item Compare settings under the \textbf{same compression schedule}
+  \item Measure compression quality \textbf{directly}, not only via success
+\end{itemize}
+\end{column}
+\begin{column}{0.51\textwidth}
+\small
+\textbf{Objective}
+\[
+\max_{\pi}\;
+\mathbb{E}[R(\pi)]-\lambda\,\mathbb{E}[C(\pi)]-\mu\,\mathbb{E}[L(\pi)]
+\]
+\centering\footnotesize
+$R$: task reward \quad $C$: token cost \quad $L$: latency
+\end{column}
+\end{columns}
 \end{frame}
 
-% ============================== 3. MOTIVATION
-\section{Motivation}
-
-\begin{frame}{The Problem: Context Grows Without Bound}
+% ============================== 4-6. LITERATURE
+\section{Literature Review}
+\begin{frame}{Literature Review (1/2): Existing Methods}
 \begin{columns}[T]
-\begin{column}{0.52\textwidth}
-\centering
-\begin{tikzpicture}[font=\scriptsize]
-\begin{axis}[
-  width=6.1cm, height=4.3cm,
-  xlabel={Interaction step $t$},
-  ylabel={Context tokens},
-  xmin=0, xmax=30, ymin=0, ymax=22000,
-  ytick={5000,10000,20000},
-  yticklabels={5k,10k,20k},
-  scaled y ticks=false,
-  xtick={0,10,20,30},
-  axis lines=left,
-  legend style={at={(0.02,0.98)},anchor=north west,draw=none,fill=none,font=\tiny},
-]
-\addplot[red!75!black, very thick, smooth] coordinates {
-  (0,1200)(5,4200)(10,8000)(15,12000)(20,15800)(25,18600)(30,21000)};
-\addlegendentry{No compression}
-\addplot[envblue, very thick, smooth] coordinates {
-  (0,1200)(5,2600)(10,3400)(15,4000)(20,4900)(25,4400)(30,5200)};
-\addlegendentry{With compression}
-\end{axis}
-\end{tikzpicture}
-\end{column}
-\begin{column}{0.46\textwidth}
-\begin{alertblock}{Two bottlenecks}
-\begin{itemize}\footnotesize
-  \item \textbf{Memory} --- the KV cache scales with sequence length
-  \item \textbf{Distraction} --- long, partly stale context degrades decisions
+\begin{column}{0.32\textwidth}
+\begin{block}{ACON \cite{ACON}}
+\footnotesize
+\begin{itemize}
+  \item LLM summarises history and observations past a token threshold
+  \item Guideline optimised in natural language
+  \item \textbf{Peak tokens $\downarrow$ 26--54\%}, accuracy kept
 \end{itemize}
+\end{block}
+\end{column}
+\begin{column}{0.32\textwidth}
+\begin{block}{SAC \cite{SAC}}
+\footnotesize
+\begin{itemize}
+  \item Anchor tokens absorb context via bidirectional attention
+  \item Only anchor KV is kept
+  \item \textbf{54.95 F1} at $15\times$ (EPL 51.52)
+\end{itemize}
+\end{block}
+\end{column}
+\begin{column}{0.32\textwidth}
+\begin{block}{LLMLingua \cite{LLMLingua}}
+\footnotesize
+\begin{itemize}
+  \item Drops low-information tokens using a small LM
+  \item Task-agnostic, single-step
+  \item Only \textbf{39.3\%} on AppWorld history
+\end{itemize}
+\end{block}
+\end{column}
+\end{columns}
+\vspace{0.05cm}
+\begin{columns}[T]
+\begin{column}{0.32\textwidth}
+\begin{block}{SWE-Pruner \cite{SWEPruner}}
+\footnotesize
+\begin{itemize}
+  \item 0.6B line classifier guided by an agent-written goal hint
+  \item \textbf{Tokens $\downarrow$ 23--38\%}
+  \item Resolve rate $+$1.2--1.4 points
+\end{itemize}
+\end{block}
+\end{column}
+\begin{column}{0.32\textwidth}
+\begin{block}{MEM1 / MemAgent \cite{MEM1,MemAgent}}
+\footnotesize
+\begin{itemize}
+  \item Agent trained with RL to keep a bounded memory
+  \item 8K window $\to$ 3.5M-token QA, $<$10\% loss
+  \item \textcolor{red!70!black}{Needs agent weights}
+\end{itemize}
+\end{block}
+\end{column}
+\begin{column}{0.32\textwidth}
+\begin{alertblock}{Takeaway}
+\footnotesize
+Each method compresses \textbf{one} kind of context and is judged only by task success.\\[2pt]
+\textbf{Open:} how stages \emph{compose}, and whether critical facts survive.
 \end{alertblock}
-\begin{block}{The tension}
-\footnotesize
-Compression must be \emph{aggressive} (to save tokens) and \emph{precise}
-(one lost file path or API token derails an entire trajectory).
-\end{block}
 \end{column}
 \end{columns}
 \end{frame}
 
-% ============================== 4. BACKGROUND
-\section{Background and Related Work}
-
-\begin{frame}{The Two Methods We Build On}
-\begin{columns}[T]
-\begin{column}{0.49\textwidth}
-\begin{block}{ACON --- prompt-level, generative}
-\footnotesize
-\begin{itemize}
-  \item An LLM \emph{rewrites} the history when $|h_t| > T_{\mathrm{hist}}$
-        and shortens observations when $|o_t| > T_{\mathrm{obs}}$
-  \item The compression guideline is optimised \emph{in natural language}:
-        contrast runs that succeed uncompressed but fail compressed
-  \item Agent weights stay frozen; compressor is distilled into a small model
-  \item AppWorld: $56.5\%$ vs.\ $56.0\%$ accuracy, peak tokens $\downarrow$ 26--54\%
-\end{itemize}
-\end{block}
-\end{column}
-\begin{column}{0.49\textwidth}
-\begin{block}{SAC --- KV-level, soft}
-\footnotesize
-\begin{itemize}
-  \item Selects \emph{anchor tokens}, marks them with a learned embedding
-  \item Bidirectional attention lets anchor KV pairs absorb the whole context
-  \item No autoencoding pretraining required
-  \item MRQA, Llama-3.2-1B at $15\times$: $54.95$ in-domain F1 (vs.\ EPL $51.52$)
-\end{itemize}
-\end{block}
-\end{column}
-\end{columns}
-\vspace{0.25cm}
-\begin{center}
-\footnotesize
-Our project \textbf{reproduces both on our own hardware}, then asks how
-compression stages should be \emph{composed} and \emph{evaluated}.
-\end{center}
-\end{frame}
-
-% ============================== 5. LITERATURE TABLE
-\begin{frame}{Where the Field Stands}
+\begin{frame}{Literature Review (2/2): Comparison}
 \centering
 \scriptsize
 \renewcommand{\arraystretch}{1.25}
@@ -185,8 +197,6 @@ Intrinsic quality metric & No   & No  & No  & No  & No & \textcolor{cmpgreen}{\t
 \bottomrule
 \end{tabular}}
 
-
-
 \vspace{0.4cm}
 \begin{columns}
 \begin{column}{0.88\textwidth}
@@ -194,26 +204,133 @@ Intrinsic quality metric & No   & No  & No  & No  & No & \textcolor{cmpgreen}{\t
 \begin{itemize}
   \item ``Partly'': ACON reports a combined setting in an appendix ablation only.
   \item ``Merged'': a single learned memory holds both history and observations.
-  \item Every existing method compresses \emph{one} kind of context ---
-        how the stages \textbf{interact} is unstudied.
+  \item Every method compresses \emph{one} kind of context --- how the stages
+        \textbf{interact} is unstudied.
 \end{itemize}
 \end{column}
 \end{columns}
 \end{frame}
 
-% ============================== 6. SETUP
-\section{Reproduction}
+% ============================== THEORY: ACON AND SAC
+\section{Theory: ACON and SAC}
+\begin{frame}{Theory (1/2): ACON --- Agent Context Optimization}
+\begin{columns}[T]
+\begin{column}{0.46\textwidth}
+\begin{block}{Threshold-triggered compression}
+\scriptsize
+\[
+h'_t=\begin{cases} f(h_t;\phi,\mathcal{P}_{\mathrm{hist}}) & |h_t|>T_{\mathrm{hist}}\\ h_t & \text{else}\end{cases}
+\]
+\[
+o'_t=\begin{cases} f(o_t,h_{t-1};\phi,\mathcal{P}_{\mathrm{obs}}) & |o_t|>T_{\mathrm{obs}}\\ o_t & \text{else}\end{cases}
+\]
+\end{block}
+\begin{block}{Objective (agent $\theta$ frozen)}
+\scriptsize
+\[
+\max_{\psi=(\phi,\mathcal{P})}\ \mathbb{E}\big[R(s_T(\psi))\big]-\lambda\,\mathbb{E}\big[C(H'(\psi))\big]
+\]
+\end{block}
+\end{column}
+\begin{column}{0.52\textwidth}
+\centering
+\begin{tikzpicture}[
+  font=\scriptsize,
+  bx/.style={draw, rounded corners=2pt, thick, align=center,
+    text width=2.05cm, minimum height=0.85cm, inner sep=2pt},
+  arr/.style={-{Latex[length=2mm]}, line width=0.7pt}]
+\node[bx, fill=cmpgreen!8, draw=cmpgreen] (ok) {no compression:\\success on $H$};
+\node[bx, fill=red!8, draw=red!60!black, below=3mm of ok] (bad) {compressed:\\failure on $H'$};
+\node[bx, fill=envblue!8, draw=envblue, right=5mm of ok, yshift=-5.8mm] (opt) {optimizer LLM\\contrasts $H$, $H'$};
+\node[bx, fill=metviolet!8, draw=metviolet, below=6mm of opt] (p) {refined guideline\\$\mathcal{P}^{(k)}\!\to\!\mathcal{P}^{(k+1)}$};
+\draw[arr] (ok.east) -- (opt);
+\draw[arr] (bad.east) -- (opt);
+\draw[arr] (opt) -- node[right]{feedback} (p);
+\draw[arr, dashed, gray] (p.west) -| node[pos=0.25,below]{re-run} (bad.south);
+\end{tikzpicture}
+\begin{block}{Guideline optimisation and distillation}
+\scriptsize
+\begin{itemize}
+  \item \textbf{UT:} learn from tasks that \emph{fail} after compression
+        $\Rightarrow$ accuracy $\uparrow$
+  \item \textbf{CO:} learn from tasks that \emph{succeed} $\Rightarrow$
+        tokens $\downarrow$; under \$2 per benchmark
+  \item \textbf{Distil} gpt-4.1\,$+\,\mathcal{P}^*$ into Qwen3-14B:
+        99.1\% cost cut, $>$95\% accuracy kept
+\end{itemize}
+\end{block}
+\end{column}
+\end{columns}
+\end{frame}
 
-\begin{frame}{Experimental Setup}
+\begin{frame}{Theory (2/2): SAC --- Contextual Semantic Anchors}
+\begin{center}
+\begin{tikzpicture}[
+  font=\scriptsize,
+  tok/.style={draw=gray!60, fill=gray!10, minimum size=3.2mm, inner sep=0pt},
+  anc/.style={draw=ctlorange, fill=ctlorange!35, minimum size=3.2mm, inner sep=0pt},
+  bx/.style={draw, rounded corners=2pt, very thick, align=center,
+    text width=2.3cm, minimum height=0.95cm, inner sep=2pt},
+  arr/.style={-{Latex[length=2mm]}, line width=0.8pt}]
+\foreach \k in {0,...,11} {
+  \pgfmathtruncatemacro{\a}{mod(\k,4)==3 ? 1 : 0}
+  \ifnum\a=1 \node[anc] (t\k) at (\k*0.36,0) {};
+  \else      \node[tok] (t\k) at (\k*0.36,0) {}; \fi
+}
+\node[below=1mm of t5, xshift=1.8mm, font=\tiny, align=center]
+  {context $x_1\dots x_n$ \quad \textcolor{ctlorange}{\textbf{anchors}}};
+\node[bx, fill=cmpgreen!8, draw=cmpgreen, right=6mm of t11] (enc)
+  {\textbf{Compressor}\\bidirectional attn\\+ anchor embedding};
+\node[bx, fill=ctlorange!12, draw=ctlorange, right=6mm of enc] (kv)
+  {\textbf{Anchor KV only}\\$n/r$ entries};
+\node[bx, fill=envblue!8, draw=envblue, right=6mm of kv] (dec)
+  {\textbf{LLM decoder}\\question $\to$ answer};
+\draw[arr] (t11.east) -- (enc);
+\draw[arr] (enc) -- (kv);
+\draw[arr] (kv) -- (dec);
+\end{tikzpicture}
+\end{center}
+\vspace{0.1cm}
+\begin{columns}[T]
+\begin{column}{0.49\textwidth}
+\begin{block}{Mechanism}
+\scriptsize
+\begin{itemize}
+  \item Some context tokens are chosen as \textbf{anchors} and marked with a
+        learned anchor embedding
+  \item \textbf{Bidirectional attention} lets each anchor absorb information
+        from the whole context
+  \item Only the anchors' key--value pairs are passed on: compression ratio
+        $r$ keeps $n/r$ of them
+\end{itemize}
+\end{block}
+\end{column}
+\begin{column}{0.49\textwidth}
+\begin{block}{Training and results}
+\scriptsize
+\begin{itemize}
+  \item \textbf{Autoencoding-free:} no reconstruction objective; trainable
+        adapter pretrained on SlimPajama, fine-tuned on MRQA
+  \item Llama-3.2-1B, $15\times$: \textbf{54.95} ID / 39.26 OOD F1
+        (EPL 51.52)
+  \item Output is a \textbf{KV cache}, not text --- needs model internals
+\end{itemize}
+\end{block}
+\end{column}
+\end{columns}
+\end{frame}
+
+% ============================== 9-11. IMPLEMENTATION AND RESULTS
+\section{Implementation and Results}
+\begin{frame}{Implementation and Results (1/3): Setup}
 \begin{columns}[T]
 \begin{column}{0.48\textwidth}
-\begin{block}{Hardware \& serving}
+\begin{block}{Hardware and serving}
 \footnotesize
 \begin{itemize}
   \item One NVIDIA RTX 2000 Ada (16\,GB)
   \item Models served locally through Ollama
-  \item Agent: \texttt{qwen2.5:14b}
-  \item Compressor: \texttt{qwen2.5:7b}
+  \item Agent \texttt{qwen2.5:14b}, compressor \texttt{qwen2.5:7b}
 \end{itemize}
 \end{block}
 \begin{block}{Benchmarks}
@@ -226,26 +343,32 @@ Intrinsic quality metric & No   & No  & No  & No  & No & \textcolor{cmpgreen}{\t
 \end{block}
 \end{column}
 \begin{column}{0.48\textwidth}
-\begin{alertblock}{Deviations from the papers --- and why}
+\begin{alertblock}{Deviations from the papers}
 \footnotesize
 \begin{itemize}
   \item Thresholds $T_{\mathrm{hist}}{=}512$, $T_{\mathrm{obs}}{=}256$
-        instead of $4096/1024$ --- the paper values almost never fire
-        on this split
-  \item Ollama served both models with a \textbf{4096-token} context, so long
-        baseline prompts were truncated
+        (paper: 4096/1024, which rarely fire on this split)
+  \item Ollama context of \textbf{4096 tokens}, so long baseline prompts
+        were truncated
   \item One seed per setting so far
 \end{itemize}
 \end{alertblock}
-\vspace{0.1cm}
+\begin{block}{What we implemented}
 \footnotesize
-These caveats are carried explicitly into every claim that follows.
+\begin{itemize}
+  \item ACON history / observation compression on a fully local stack
+  \item SAC evaluation of the released $5\times$ and $15\times$ checkpoints
+  \item \textbf{SAC\,$\times$\,ACON pilot}: \emph{FGD} --- KL from the
+        full-context model only where it beats the compressed one;
+        \emph{TGA} --- question appended to each encoder chunk.
+        5,000 steps from the $15\times$ adapter, same seed and data order
+\end{itemize}
+\end{block}
 \end{column}
 \end{columns}
 \end{frame}
 
-% ============================== 7. ACON RESULTS
-\begin{frame}{Result 1: ACON Reproduction on AppWorld}
+\begin{frame}{Implementation and Results (2/3): ACON Reproduction on AppWorld}
 \centering
 \scriptsize
 \renewcommand{\arraystretch}{1.2}
@@ -267,35 +390,30 @@ History compression, matched subset               & 18 & 30 & \textbf{9} & 19.50
 \bottomrule
 \end{tabular}}
 
-
 \vspace{0.35cm}
 \begin{columns}
 \begin{column}{0.92\textwidth}
 \footnotesize
 \begin{itemize}
-  \item On the 18 matched tasks: \textbf{9 solved vs.\ 7}, with
-        \textbf{24.5\% fewer agent input tokens}.
-  \item The change is \emph{not uniform} --- it solved 5 tasks the baseline
-        failed, and failed 3 the baseline solved.
-  \item At this scale the latency overhead ACON reports did \textbf{not} appear;
-        all compressed runs finished sooner.
+  \item Matched 18 tasks: \textbf{9 solved vs.\ 7}, with \textbf{24.5\% fewer
+        agent input tokens}.
+  \item Not uniform: solved 5 tasks the baseline failed, failed 3 it solved.
+  \item At this scale ACON's reported latency overhead did \textbf{not} appear.
 \end{itemize}
 \end{column}
 \end{columns}
 \end{frame}
 
-% ============================== 8. SAC RESULTS
-\begin{frame}{Result 2: SAC Reproduction and the SAC\,$\times$\,ACON Pilot}
+\begin{frame}{Implementation and Results (3/3): SAC and SAC\,$\times$\,ACON}
 \begin{block}{SAC reproduces to within 0.2 F1}
 \footnotesize
 $15\times$: \textbf{54.98} ID / \textbf{39.25} OOD (published 54.95 / 39.26)
 \qquad
 $5\times$: \textbf{63.70} / \textbf{47.71} (published 63.63 / 47.72)
 \end{block}
-\vspace{-0.1cm}
 \centering
 \scriptsize
-\renewcommand{\arraystretch}{1.2}
+\renewcommand{\arraystretch}{1.15}
 \setlength{\tabcolsep}{4.5pt}
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{lcccc}
@@ -313,399 +431,116 @@ R3: $+$ TGA $+$ FGD                    & \textbf{60.03} & \textbf{44.71} &
 \bottomrule
 \end{tabular}}
 
-
-
-\vspace{0.3cm}
+\vspace{0.25cm}
 \begin{columns}
-\begin{column}{0.92\textwidth}
+\begin{column}{0.94\textwidth}
 \footnotesize
 \begin{itemize}
-  \item \textbf{FGD is a null result.} Its intervals contain zero. A diagnostic
-        explains why: the zero-shot full-context teacher had \emph{higher}
-        gold-answer NLL than the compressed student on \textbf{90.5\%} of
-        2,000 training examples --- there is little to distil.
-  \item \textbf{TGA\,$+$\,FGD wins}, beating the published 20,000-step
-        checkpoint after a quarter of the budget --- but the question is seen
-        during compression, so the memory is \emph{not reusable} across
-        questions. This is a separate query-aware setting, not a drop-in
-        improvement.
+  \item \textbf{FGD: no measurable effect} --- the full-context teacher had
+        higher gold NLL than the student on \textbf{90.5\%} of examples.
+  \item \textbf{TGA\,$+$\,FGD} beats the published checkpoint at a quarter of
+        the steps, but is query-aware (memory not reusable across questions).
 \end{itemize}
 \end{column}
 \end{columns}
 \end{frame}
 
-% ============================== 9. GAP A
+% ============================== 12. RESEARCH GAPS
 \section{Research Gaps}
-
-\begin{frame}{Gap (a): Token Savings Do Not Become Time Savings}
-\begin{columns}[T]
-\begin{column}{0.47\textwidth}
-\centering
-\begin{tikzpicture}[font=\scriptsize]
-\begin{axis}[
-  width=5.9cm, height=4.2cm,
-  ybar, bar width=16pt,
-  ylabel={Median time / task (s)},
-  symbolic x coords={No comp., History, Observation},
-  xtick=data,
-  ymin=0, ymax=120,
-  nodes near coords, nodes near coords style={font=\tiny},
-  x tick label style={font=\tiny},
-  axis lines=left,
-]
-\addplot[fill=envblue!70, draw=envblue] coordinates {
-  (No comp.,73.24) (History,87.68) (Observation,101.92)};
-\end{axis}
-\end{tikzpicture}
-
-{\tiny ACON's own measurement: Qwen3-14B agent \& compressor, one A100.}
-\end{column}
-\begin{column}{0.51\textwidth}
-\begin{alertblock}{Why compression can cost time}
+\begin{frame}{Research Gaps}
+\begin{alertblock}{(a) Token savings $\neq$ time savings}
 \footnotesize
 \begin{itemize}
-  \item The compressor generates \textbf{autoregressively} --- it is itself an
-        LLM call
-  \item Rewriting the history \textbf{invalidates the agent's KV cache}, so the
-        compressed prefix must be re-encoded from scratch
+  \item Compressor is itself an LLM call, and rewriting history \textbf{resets the KV cache}
+  \item ACON's median time per task: \textbf{73\,s} (none) $\to$ \textbf{88\,s} (history) $\to$ \textbf{102\,s} (observation)
 \end{itemize}
 \end{alertblock}
-\begin{block}{Consequence}
-\footnotesize
-A token-count objective $C(\pi)$ does not capture this overhead at all.
-Latency must be modelled as a \emph{separate} term.
-\end{block}
-\end{column}
-\end{columns}
-\end{frame}
-
-% ============================== 10. GAP B
-\begin{frame}{Gap (b): The Combined Setting Is Schedule-Confounded}
-\begin{block}{The trigger set depends on the pipeline itself}
-\footnotesize
-\[
-\mathcal{K}(\pi)=\big\{\,t \;:\; |h'_{t-1}\oplus(o'_t,a_t)|>T_{\mathrm{hist}}\,\big\}
-\]
-Since $|o'_t|\le|o_t|$, compressing observations first makes $|h_t|$ grow more
-slowly. History compression then fires at \textbf{different steps}, and on
-\textbf{already-pruned text}: in general
-$\mathcal{K}(\pi_{ho})\neq\mathcal{K}(\pi_{h})$.
-\end{block}
-
-\begin{columns}[T]
-\begin{column}{0.46\textwidth}
-\begin{block}{The interaction term}
-\footnotesize
-\[
-I=\Delta(\pi_{ho})-\Delta(\pi_h)-\Delta(\pi_o)
-\]
-On AppWorld: $\Delta(\pi_h)={+}0.5$, $\Delta(\pi_o)={-}2.4$ and
-$\Delta(\pi_{ho})={-}11.4$ points, so
-\[
-I=\mathbf{-9.5}\ \text{points.}
-\]
-\end{block}
-\end{column}
-\begin{column}{0.50\textwidth}
-\begin{alertblock}{Why this number cannot be interpreted}
-\footnotesize
-$I$ mixes \emph{two} effects that change simultaneously:
-\begin{enumerate}
-  \item genuinely composing $f_o$ with $f_h$
-  \item the \textbf{shifted trigger schedule}
-\end{enumerate}
-The two cannot be separated, so $-9.5$ is \emph{not} evidence that composition
-itself is harmful.
-\end{alertblock}
-\end{column}
-\end{columns}
-\end{frame}
-
-% ============================== 11. GAP C
-\begin{frame}{Gap (c): Compression Quality Is Only Measured Indirectly}
-\begin{center}
-\begin{tikzpicture}[
-  font=\footnotesize,
-  bx/.style={draw, rounded corners=2pt, very thick, align=center,
-             text width=2.6cm, minimum height=1.0cm, inner sep=3pt},
-  arr/.style={-{Latex[length=2.2mm]}, line width=0.8pt}
-]
-\node[bx, fill=envblue!10, draw=envblue] (c)  {compressed\\context $h'_t$};
-\node[bx, fill=gray!10, draw=gray!60!black, right=1.1cm of c] (a) {agent\\rollout};
-\node[bx, fill=red!8, draw=red!60!black, right=1.1cm of a] (r) {task success\\$R$ / F1 / EM};
-\draw[arr] (c)--(a);
-\draw[arr] (a)--(r);
-\node[below=0.55cm of a, font=\scriptsize, text width=6.5cm, align=center]
-  {\textcolor{red!70!black}{\textbf{A failure here could mean either:}}\\
-   the compressor dropped a needed fact, \emph{or} the agent simply reasoned badly.};
-\draw[arr, dashed, red!70!black] (r.north) -- ++(0,0.45) -| node[pos=0.25,above,font=\scriptsize]
-  {only signal available} (c.north);
-\end{tikzpicture}
-\end{center}
-\vspace{0.1cm}
-\begin{columns}
-\begin{column}{0.9\textwidth}
-\footnotesize
-\begin{itemize}
-  \item ACON and SAC judge a compressor \textbf{solely} by downstream success.
-  \item Neither measures whether the \emph{specific facts the agent will need}
-        survive compression.
-  \item So a failure \textbf{cannot be attributed} to information loss rather
-        than to the agent --- the compressor is never diagnosed directly.
-\end{itemize}
-\end{column}
-\end{columns}
-\end{frame}
-
-% ============================== 12. PROBLEM STATEMENT
-\section{Problem Statement}
-
-\begin{frame}{Problem Statement}
-\begin{block}{Informally}
-\footnotesize
-Given a long-horizon agent with \textbf{frozen weights}, a history compressor
-and an observation compressor, determine how the two stages should be
-\textbf{composed and scheduled} so that the token savings of each are retained
-without lowering task success --- holding the compression schedule fixed, and
-measuring compression quality \emph{directly}.
-\end{block}
-
-\begin{columns}[T]
-\begin{column}{0.49\textwidth}
-\footnotesize
-\textbf{Agent (POMDP, frozen $\theta$):}
-\vspace{-0.15cm}
-\[ a_t = M\big(h'_{t-1},\,o'_t;\,\theta\big) \]
-\textbf{Compression operators:}
-\vspace{-0.2cm}
-\[
-o'_t=\begin{cases} f_o(o_t,h'_{t-1}) & |o_t|>T_{\mathrm{obs}}\\ o_t & \text{else}\end{cases}
-\]
-\vspace{-0.3cm}
-\[
-h'_t=\begin{cases} f_h(x_t) & t\in\mathcal{K}\\ h'_{t-1}\oplus(o'_t,a_t) & \text{else}\end{cases}
-\]
-\textbf{Two composition orders:}
-\vspace{-0.15cm}
-\begin{align*}
-x_t^{\mathrm{seq}} &= h'_s\oplus(o'_{s+1},a_{s+1},\dots,o'_t,a_t)\\
-x_t^{\mathrm{dec}} &= h'_s\oplus(o_{s+1},a_{s+1},\dots,o_t,a_t)
-\end{align*}
-\vspace{-0.35cm}
-\begin{center}\tiny ACON uses $x^{\mathrm{seq}}$.\end{center}
-\end{column}
-\begin{column}{0.49\textwidth}
-\footnotesize
-\textbf{Cost, peak context and latency:}
-\vspace{-0.2cm}
-\[ C(\pi)=\sum_{t=1}^{T}\big(|h'_{t-1}|+|o'_t|\big) \]
-\vspace{-0.35cm}
-\[ L(\pi)=\sum_t \ell_M + \sum_{t\in\mathcal{K}}\ell_{f_h}
-        + \sum_{|o_t|>T_{\mathrm{obs}}}\ell_{f_o} \]
-\textbf{Formal objective:}
-\vspace{-0.2cm}
-\[
-\pi^{*}=\arg\max_{x,\;\mathcal{K}}\;
-\mathbb{E}[R(\pi)]-\lambda\,\mathbb{E}[C(\pi)]-\mu\,\mathbb{E}[L(\pi)]
-\]
-\vspace{-0.3cm}
-\begin{center}
-subject to
-\end{center}
-\vspace{-0.45cm}
-\begin{align*}
-&\mathbb{E}[R(\pi)]\ge\mathbb{E}[R(\pi_\varnothing)]-\varepsilon\\
-&C(\pi_{ho})\le\min\{C(\pi_h),C(\pi_o)\}\\
-&\textcolor{cmpgreen}{\mathcal{K}(\pi_{ho})=\mathcal{K}(\pi_h)}
-  \ \text{\scriptsize when comparing them}
-\end{align*}
-\end{column}
-\end{columns}
-\end{frame}
-
-% ============================== 13. PROPOSED PIPELINE
-\section{Proposed Solution}
-
-\begin{frame}{Proposed Pipeline}
-\begin{center}
-\begin{tikzpicture}[
-  font=\scriptsize,
-  bx/.style={draw, rounded corners=2pt, very thick, align=center,
-    text width=2.5cm, minimum height=0.9cm, inner sep=2.5pt},
-  arr/.style={-{Latex[length=2.2mm]}, line width=0.8pt},
-  env/.style={bx, fill=envblue!8,  draw=envblue},
-  cmp/.style={bx, fill=cmpgreen!8, draw=cmpgreen},
-  ctl/.style={bx, fill=ctlorange!12, draw=ctlorange},
-  met/.style={bx, fill=metviolet!8, draw=metviolet}
-]
-\node[env] (o) {\textbf{Environment}\\raw observation $o_t$};
-\node[cmp, right=7mm of o]  (oc) {\textbf{Obs.\ compressor}\\$o'_t$ for this step};
-\node[env, right=7mm of oc] (ag) {\textbf{Agent}\\acts on $h'_{t-1},o'_t$};
-\node[ctl, below=9mm of o]  (buf){\textbf{Raw buffer}\\keeps $o_1,\dots,o_t$};
-\node[cmp, right=7mm of buf](hc) {\textbf{History compr.}\\$h'_t$ from \emph{raw} $o$};
-\node[ctl, right=7mm of hc] (sch){\textbf{Fixed schedule}\\replayed triggers};
-\node[met, right=7mm of sch](cfr){\textbf{CFR probe}\\facts in $o$ vs.\ $h'_t$};
-\draw[arr] (o)--(oc);
-\draw[arr] (oc)--(ag);
-\draw[arr] (o)--(buf);
-\draw[arr] (buf)--(hc);
-\draw[arr] (sch)--(hc);
-\draw[arr] (hc.north) -- ++(0,0.3) -| (ag.south);
-\draw[arr, dashed, metviolet] (hc.south) -- ++(0,-0.3) -| (cfr.south);
-\end{tikzpicture}
-\end{center}
 \vspace{0.15cm}
-\begin{columns}[T]
-\begin{column}{0.49\textwidth}
-\begin{block}{1. Decoupled composition order}
-\footnotesize
-The agent still gets the short $o'_t$, but the \textbf{raw} $o_t$ is kept in a
-side buffer and $f_h$ receives $x^{\mathrm{dec}}_t$.
-If $f_o$ only deletes content then $V(o'_t)\subseteq V(o_t)$, so facts dropped
-by the observation stage \emph{can still reach} the history summary.
-\end{block}
-\end{column}
-\begin{column}{0.49\textwidth}
-\begin{block}{2. Controlled compression schedule}
-\footnotesize
-Record $\mathcal{K}^{h}=\mathcal{K}(\pi_h)$ from the history-only run and
-\textbf{replay} it: $\mathcal{K}(\pi_{ho}):=\mathcal{K}^{h}$.
-With the schedule fixed, $\pi_h$ and $\pi_{ho}$ differ \emph{only} in $f_o$,
-so $I$ now measures composition alone.
-\end{block}
-\end{column}
-\end{columns}
-\end{frame}
-
-% ============================== 14. CFR
-\begin{frame}{3. Critical-Fact Retention: Measuring the Compressor Directly}
-\begin{block}{Definition}
-\footnotesize
-Let $V(\cdot)$ extract state variables --- access tokens, entity IDs, file
-paths, numeric values --- and let $a^{\varnothing}_{1:T}$ be the actions of the
-\textbf{uncompressed reference run}. The facts at stake in trigger $t$, and the
-retention rate, are
-\vspace{-0.2cm}
-\[
-F_t=V(x_t)\cap\bigcup_{t'}V\big(a^{\varnothing}_{t'}\big),
-\qquad
-\mathrm{CFR}(\pi)=\frac{\sum_{t\in\mathcal{K}}\sum_{v\in F_t}
-   \mathbf{1}\big[v\sqsubseteq h'_t\big]}{\sum_{t\in\mathcal{K}}|F_t|},
-\]
-\vspace{-0.25cm}
-\footnotesize
-where $v\sqsubseteq h'_t$ means an \emph{exact, verbatim} occurrence of $v$ in $h'_t$.
-\end{block}
-
-\begin{columns}[T]
-\begin{column}{0.49\textwidth}
-\begin{block}{Why it is cheap}
+\begin{alertblock}{(b) Combined setting is schedule-confounded}
 \footnotesize
 \begin{itemize}
-  \item $V(\cdot)$ is a set of pattern extractors for AppWorld's tokens, IDs,
-        paths and numbers
-  \item Computed \textbf{offline} for every compressor call
-  \item \textbf{No additional agent rollouts} required
+  \item Compressing observations changes \emph{when} history compression fires
+  \item ACON's combined drop ($I=\mathbf{-9.5}$ points) mixes composition with the shifted schedule
 \end{itemize}
-\end{block}
-\end{column}
-\begin{column}{0.49\textwidth}
-\begin{block}{What it lets us test}
+\end{alertblock}
+\vspace{0.15cm}
+\begin{alertblock}{(c) Compression quality is measured only indirectly}
 \footnotesize
 \begin{itemize}
-  \item Rank correlation $\rho(\mathrm{CFR},R)$ --- does fact retention
-        actually predict task success?
-  \item $\mathrm{CFR}$ under $x^{\mathrm{seq}}$ vs.\ $x^{\mathrm{dec}}$ ---
-        does decoupling really retain more?
-  \item Attribute a failure to \textbf{information loss} rather than to the
-        agent
+  \item Judged only by task success or F1 --- never whether \textbf{critical facts} survive
+  \item A failure cannot be traced to information loss vs.\ agent error
 \end{itemize}
-\end{block}
-\end{column}
-\end{columns}
+\end{alertblock}
 \end{frame}
 
-% ============================== 15. FUTURE WORK
+% ============================== 13. FUTURE WORK
 \section{Future Work}
-
 \begin{frame}{Future Work}
 \begin{columns}[T]
 \begin{column}{0.49\textwidth}
-\begin{block}{Complete the reproduction}
+\begin{block}{Proposed pipeline}
 \footnotesize
-\begin{itemize}
-  \item Finish the 38-task history-compression run
-  \item Run observation and combined history\,$+$\,observation compression
-  \item Add the paper thresholds ($4096/1024$) and the
-        \texttt{llama3.1:8b} compressor on the same split
-\end{itemize}
-\end{block}
-\begin{block}{Implement the proposed pipeline}
-\footnotesize
-\begin{itemize}
-  \item Raw-observation buffer ($x^{\mathrm{dec}}$)
-  \item Schedule replay $\mathcal{K}(\pi_{ho}):=\mathcal{K}^{h}$
-  \item CFR extractor; then estimate $I$ under \emph{both} orders with the
-        schedule held fixed
-\end{itemize}
+\begin{enumerate}
+  \item \textbf{Decoupled order:} $f_h$ reads \emph{raw} observations from a
+        side buffer ($x^{\mathrm{dec}}$), so facts dropped by $f_o$ can
+        still reach the summary
+  \item \textbf{Controlled schedule:} replay the history-only triggers,
+        $\mathcal{K}(\pi_{ho}):=\mathcal{K}^{h}$, so $I$ measures composition
+        alone
+  \item \textbf{Critical-Fact Retention (CFR):} fraction of task-critical
+        IDs, tokens, paths and numbers kept verbatim, computed offline
+\end{enumerate}
 \end{block}
 \end{column}
 \begin{column}{0.49\textwidth}
-\begin{block}{Measure latency directly}
-\footnotesize
-Log $\ell_M$, $\ell_{f_h}$, $\ell_{f_o}$ per call to decompose $L(\pi)$,
-including \textbf{prefix re-encoding} after each history compression.
-\end{block}
-\begin{alertblock}{Strengthen the evidence}
+\begin{block}{Experiments}
 \footnotesize
 \begin{itemize}
-  \item At least \textbf{three seeds} per setting
-  \item Raise the served context window above 4096 tokens so baseline prompts
-        are not truncated
-  \item For SAC\,$\times$\,ACON: run \textbf{TGA alone}, plus the $5\times$ and
-        $51\times$ ratios
+  \item Finish the 38-task history run; run observation, combined, paper
+        thresholds and \texttt{llama3.1:8b} compressor
+  \item Log per-call latency $\ell_M,\ell_{f_h},\ell_{f_o}$, including
+        prefix re-encoding
+  \item Test whether $\rho(\mathrm{CFR},R)$ predicts success
 \end{itemize}
+\end{block}
+\begin{alertblock}{Stronger evidence}
+\footnotesize
+$\ge$3 seeds per setting; context window above 4096; for SAC\,$\times$\,ACON,
+TGA alone and the $5\times$/$51\times$ ratios.
 \end{alertblock}
 \end{column}
 \end{columns}
 \end{frame}
 
-% ============================== 16. REFERENCES
+% ============================== 14. REFERENCES
+\section*{References}
 \setbeamertemplate{bibliography item}[online]
-\begin{frame}[allowframebreaks]{References}
-\footnotesize
+\begin{frame}{References}
+\scriptsize
 \begin{thebibliography}{9}
-
 \bibitem{ACON} M. Kang, W.-N. Chen, D. Han, H. A. Inan, L. Wutschitz, Y. Chen,
 R. Sim, and S. Rajmohan, ``ACON: Optimizing Context Compression for
 Long-horizon LLM Agents,'' \emph{ICML}, PMLR 306, 2026.
-
 \bibitem{SAC} X. Liu, R. Zhao, P. Huang, X. Liu, J. Xiao, C. Xiao, T. Xiao,
 S. Gao, Z. Yu, and J. Zhu, ``Autoencoding-Free Context Compression for LLMs via
 Contextual Semantic Anchors,'' \emph{ICLR}, 2026.
-
 \bibitem{SWEPruner} Y. Wang, Y. Shi, M. Yang, R. Zhang, S. He, H. Lian,
 Y. Chen, S. Ye, K. Cai, and X. Gu, ``SWE-Pruner: Self-Adaptive Context Pruning
 for Coding Agents,'' arXiv:2601.16746, 2026.
-
 \bibitem{LLMLingua} H. Jiang, Q. Wu, C.-Y. Lin, Y. Yang, and L. Qiu,
 ``LLMLingua: Compressing Prompts for Accelerated Inference of Large Language
 Models,'' \emph{EMNLP}, pp.~13358--13376, 2023.
-
 \bibitem{MEM1} Z. Zhou et al., ``MEM1: Learning to Synergize Memory and
 Reasoning for Efficient Long-Horizon Agents,'' arXiv:2506.15841, 2025.
-
 \bibitem{MemAgent} H. Yu et al., ``MemAgent: Reshaping Long-Context LLM with
 Multi-Conv RL-based Memory Agent,'' \emph{ICLR}, 2026.
-
 \bibitem{AppWorld} H. Trivedi et al., ``AppWorld: A Controllable World of Apps
 and People for Benchmarking Interactive Coding Agents,'' \emph{ACL},
 pp.~16022--16076, 2024.
-
 \end{thebibliography}
 \end{frame}
 
-% ============================== 17. THANK YOU
+% ============================== 15. THANK YOU
 {
 \setbeamertemplate{footline}{}
 \begin{frame}[plain]
