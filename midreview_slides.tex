@@ -93,7 +93,9 @@ both \textbf{without losing task success}?
 \footnotesize
 \begin{itemize}
   \item Context grows every step $\Rightarrow$ memory cost, distraction
-  \item ACON's combined setting: \textbf{$-$11.4} points, worse than either stage
+  \item ACON's combined history $+$ observation setting: \textbf{44.6\%} vs.\
+        \textbf{56.0\%} with no compression ($-$11.4 points) --- below either
+        stage alone (56.5 / 53.6)~\cite{ACON}
 \end{itemize}
 \end{alertblock}
 \begin{block}{Requirements}
@@ -110,7 +112,9 @@ both \textbf{without losing task success}?
 \footnotesize
 Agent step:\; $a_t = M(h'_{t-1},\,o'_t;\,\theta)$\\[2pt]
 Pipeline:\; $\pi=(f_o,\,f_h,\,x,\,\mathcal{K})$ --- compressors, input order,
-trigger steps
+trigger steps\par\smallskip
+$x$: what $f_h$ reads --- $x^{\mathrm{seq}}$ (already-pruned $o'_t$, ACON) or
+$x^{\mathrm{dec}}$ (raw $o_t$, ours)
 \[
 \max_{\pi}\;
 \mathbb{E}[R(\pi)]-\lambda\,\mathbb{E}[C(\pi)]-\mu\,\mathbb{E}[L(\pi)]
