@@ -1,0 +1,9 @@
+{"ts": 1792818816.9993894, "model": "qwen2.5-14b-c16k", "task": "22cc237_3", "prompt_tokens": 2260, "completion_tokens": 58, "seconds": 4.991}
+{"ts": 1792818822.0540106, "model": "qwen2.5-14b-c16k", "task": "22cc237_3", "prompt_tokens": 2334, "completion_tokens": 54, "seconds": 2.61}
+{"ts": 1792818825.261392, "model": "qwen2.5-14b-c16k", "task": "22cc237_3", "prompt_tokens": 2508, "completion_tokens": 37, "seconds": 1.897}
+{"ts": 1792818827.1758695, "model": "qwen2.5-14b-c16k", "task": "22cc237_3", "prompt_tokens": 2615, "completion_tokens": 42, "seconds": 2.118}
+{"ts": 1792818829.3040166, "model": "qwen2.5-14b-c16k", "task": "22cc237_3", "prompt_tokens": 2732, "completion_tokens": 45, "seconds": 2.258}
+{"ts": 1792818831.5718198, "model": "qwen2.5-14b-c16k", "task": "22cc237_3", "prompt_tokens": 2851, "completion_tokens": 48, "seconds": 2.398}
+{"ts": 1792818833.9783285, "model": "qwen2.5-7b-c16k", "task": "22cc237_3", "prompt_tokens": 909, "completion_tokens": 92, "seconds": 7.56}
+{"ts": 1792818841.5382924, "model": "qwen2.5-14b-c16k", "task": "22cc237_3", "prompt_tokens": 2483, "completion_tokens": 42, "seconds": 6.763}
+{"ts": 1792818848.3092084, "model": "qwen2.5-14b-c16k", "task": "22cc237_3", "prompt_tokens": 2598, "completion_tokens": 49, "seconds": 2.426}

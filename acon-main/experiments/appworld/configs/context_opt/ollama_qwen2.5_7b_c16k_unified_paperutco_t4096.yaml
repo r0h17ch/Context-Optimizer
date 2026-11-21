@@ -1,0 +1,14 @@
+# Combined arm with the paper's UTCO guidelines (D.7 history, D.10 observation) at the paper's
+# history threshold 4096; observation threshold 256 as in every other arm and upstream gpt-4.1_obs.yaml.
+type: "unified"
+model: "ollama/qwen2.5-7b-c16k"
+compressor_type: "full"
+prompts:
+  prompt_system: "system_prompt"
+  prompt_user: "prompt_obs_paper_d10_utco"
+  prompt_history_user: "prompt_history_paper_d7_utco"
+history_summarization_threshold: 4096
+obs_summarization_threshold: 256
+preserve_last_k_turns: 1
+history_summary_rule: "reset"
+temperature: 0.0

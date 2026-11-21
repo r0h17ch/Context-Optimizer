@@ -632,20 +632,36 @@ class OllamaModel(BaseLLMModel):
         
         while retry_num <= retry_limit:
             try:
+                # AppWorld freezes time.time() to its simulated date; CLOCK_REALTIME is not patched.
+                t_start = time.clock_gettime(time.CLOCK_REALTIME)
                 response = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=messages,
                     **options,
                 )
-                
+
                 # Track token usage
+                input_tokens = output_tokens = None
                 if hasattr(response, 'usage') and response.usage:
                     input_tokens = getattr(response.usage, 'prompt_tokens', 0)
                     output_tokens = getattr(response.usage, 'completion_tokens', 0)
                     self._update_token_usage(input_tokens, output_tokens)
                 else:
                     self.total_requests += 1
-                
+
+                # Per-request log (ACON_REQ_LOG=<path.jsonl>): Ollama truncates silently at
+                # num_ctx, so prompt_tokens near num_ctx is the only sign a prompt was cut.
+                req_log = os.getenv("ACON_REQ_LOG")
+                if req_log:
+                    import json
+                    with open(req_log, "a") as f:
+                        f.write(json.dumps({
+                            "ts": t_start, "model": self.model_name,
+                            "task": os.getenv("ACON_TASK_ID"),
+                            "prompt_tokens": input_tokens, "completion_tokens": output_tokens,
+                            "seconds": round(time.clock_gettime(time.CLOCK_REALTIME) - t_start, 3),
+                        }) + "\n")
+
                 content = response.choices[0].message.content or ""
                 return content
                 

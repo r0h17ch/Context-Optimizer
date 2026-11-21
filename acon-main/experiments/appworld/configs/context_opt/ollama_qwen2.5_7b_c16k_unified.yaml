@@ -1,0 +1,14 @@
+# ACON unified (history + observation) optimizer — compressor: qwen2.5:7b
+# Compressor served with num_ctx 16384 (Ollama variant qwen2.5-7b-c16k; default 4096 truncated prompts).
+type: "unified"
+model: "ollama/qwen2.5-7b-c16k"
+compressor_type: "full"
+prompts:
+  prompt_system: "system_prompt"
+  prompt_user: "prompt_user"
+  prompt_history_user: "prompt_history_v2"
+history_summarization_threshold: 512
+obs_summarization_threshold: 256
+preserve_last_k_turns: 1
+history_summary_rule: "reset"
+temperature: 0.0

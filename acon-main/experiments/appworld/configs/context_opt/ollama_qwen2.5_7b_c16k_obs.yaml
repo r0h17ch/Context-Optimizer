@@ -1,0 +1,11 @@
+# ACON observation optimizer — compressor qwen2.5:7b
+# Compressor served with num_ctx 16384 (Ollama variant qwen2.5-7b-c16k; default 4096 truncated prompts).
+# Threshold lowered from 1024 -> 256 so compression actually fires.
+type: "obs"
+model: "ollama/qwen2.5-7b-c16k"
+compressor_type: "full"
+prompts:
+  prompt_system: "system_prompt"
+  prompt_user: "prompt_user"
+obs_summarization_threshold: 256
+temperature: 0.0

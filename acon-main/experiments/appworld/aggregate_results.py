@@ -6,9 +6,12 @@ from pathlib import Path
 OUT = Path("outputs")
 
 ARMS = [
-    ("fast_base",     "train_history_tiny", "Baseline (no context optimization)",   None),
-    ("fast_hist_q7b", "train_history_tiny", "ACON history optimizer",               "qwen2.5:7b"),
-    ("fast_obs_q7b",  "train_history_tiny", "ACON observation optimizer",           "qwen2.5:7b"),
+    ("base_none",           "train_history_tiny", "Baseline (no context optimization)",        None),
+    ("acon_hist_q7b",       "train_history_tiny", "ACON history (threshold 512)",              "qwen2.5:7b"),
+    ("acon_hist_q7b_t4096", "train_history_tiny", "ACON history (threshold 4096, paper default)", "qwen2.5:7b"),
+    ("acon_obs_q7b",        "train_history_tiny", "ACON observation (threshold 256)",          "qwen2.5:7b"),
+    ("acon_uni_q7b",        "train_history_tiny", "ACON unified (history + observation)",      "qwen2.5:7b"),
+    ("acon_hist_l8b",       "train_history_tiny", "ACON history (threshold 512)",              "llama3.1:8b"),
 ]
 
 def approx_tokens(s):
@@ -58,6 +61,15 @@ def load_arm(tag, split):
         tasks.append(rec)
     return {"tag": tag, "split": split, "summary": summ, "tasks": tasks}
 
+def arm_seconds(tag):
+    p = Path("run_logs") / f"{tag}.time.json"
+    if p.exists():
+        try:
+            return json.load(open(p)).get("seconds")
+        except Exception:
+            pass
+    return None
+
 def agg(a):
     t = a["tasks"]
     n = len(t)
@@ -79,7 +91,7 @@ def agg(a):
         "comp_in": ci,
         "comp_out": co,
         "comp_ratio": (co / ci) if ci else None,
-        "time_s": (a["summary"] or {}).get("total_time_seconds"),
+        "time_s": arm_seconds(a["tag"]),
     }
 
 rows = []
@@ -103,37 +115,32 @@ W("|---|---|")
 W("| Host | `cse-sdpl@100.79.174.22` (NVIDIA RTX 2000 Ada, 16 GB) |")
 W("| Serving | Ollama, OpenAI-compatible endpoint `http://localhost:11434/v1` |")
 W("| Agent model | `qwen2.5:14b` |")
-W("| Compressor model | `qwen2.5:7b` |")
+W("| Compressor models | `qwen2.5:7b` (primary), `llama3.1:8b` (comparison arm) |")
 W("| Benchmark | AppWorld |")
-W("| Split | `train_history_tiny`, fixed 8-task subset (identical across all arms) |")
-W("| Max iterations / task | 12 |")
+W("| Split | `train_history_tiny`, full split (39 tasks) |")
+W("| Max iterations / task | 30 |")
 W("| Seed | 42 |")
 W("| Temperature | 0.0 |")
 W("")
-W("## Read this before the numbers")
+W("## Limitations")
 W("")
-W("Three constraints materially limit what this run can show. They are properties of how the run")
-W("was configured and of the host, not of ACON.")
+W("State these in the report rather than letting a reader find them.")
 W("")
-W("1. **Sample size is 8 tasks.** A one-task difference is a 12.5 percentage-point swing. None of")
-W("   the success-rate differences below are statistically meaningful. Token counts, which are")
-W("   aggregated over thousands of requests, are the trustworthy signal here; success rates are not.")
-W("2. **`max_iter` was 12.** Three of the eight tasks were separately measured needing 14, 19 and 21")
-W("   iterations to succeed, so they cannot be solved by any arm under this cap. They are marked")
-W("   `capped` in the per-task tables. This depresses every arm equally but compresses the range in")
-W("   which ACON could demonstrate a gain.")
-W("3. **Ollama served both models with a 4096-token context window.** Baseline agent inputs reach")
-W("   ~100k cumulative tokens on long tasks, so individual requests exceeding 4096 tokens were")
-W("   silently truncated by the server. A gap between ACON and baseline therefore partly measures")
-W("   ACON avoiding that truncation, rather than compression helping on its own terms. This is not a")
-W("   clean context-length experiment.")
-W("")
-W("A conclusive run needs the full 38-task split at `max_iter` 30 with a context window at or above")
-W("the model maximum. That is roughly the 11-hour configuration in `run_acon_full_test.sh`.")
+W("1. **Context window capped at 4096 tokens.** Ollama served both models with `num_ctx=4096`, the")
+W("   largest that fits with the 14b agent and 7b compressor co-resident in 16 GB of VRAM. Baseline")
+W("   agent inputs exceed this on long tasks, so those requests were truncated server-side. Part of")
+W("   any ACON gain is therefore ACON keeping context under the window, not compression helping in")
+W("   the abstract. This is the single biggest caveat on these numbers.")
+W("2. **Compression thresholds deviate from the paper.** The stock thresholds (4096 history / 1024")
+W("   observation) almost never fire on this split, whose history text runs 57-700 tokens. The")
+W("   primary arms use 512 / 256 so the optimizer actually engages; the `acon_hist_q7b_t4096` arm")
+W("   retains the paper default to quantify how often stock settings fire here.")
+W("3. **Single seed (42), single split.** No variance estimate across seeds. Differences of one or")
+W("   two tasks out of 38 should not be treated as significant.")
 W("")
 W("## Headline results")
 W("")
-W("| Arm | Split | Method | Compressor | Tasks | Solved | Success rate | Avg reward | Avg iters | Agent input tokens | Wall clock |")
+W("| Arm | Split | Method | Compressor | Tasks done | Solved | Success rate | Avg reward | Avg iters | Agent input tokens | Wall clock |")
 W("|---|---|---|---|---|---|---|---|---|---|---|")
 for tag, split, desc, comp, a, g in rows:
     if g is None:
@@ -141,14 +148,14 @@ for tag, split, desc, comp, a, g in rows:
         continue
     ts = g["time_s"]
     tstr = f"{int(ts//60)}m {int(ts%60)}s" if ts else "—"
-    W(f"| `{tag}` | {split} | {desc} | {comp or '—'} | {g['n']} | {g['ok']} | **{g['sr']:.1f}%** | "
+    W(f"| `{tag}` | {split} | {desc} | {comp or '—'} | {g['n']}/39 | {g['ok']} | **{g['sr']:.1f}%** | "
       f"{g['avg_reward']:.3f} | {g['avg_iters']:.1f} | {g['in_tok']:,} | {tstr} |")
 W("")
 
 W("## Context-compression activity")
 W("")
 W("Compression only fires when the accumulated context crosses the optimizer's token threshold "
-  "(512 for history, 256 for observations). Token counts for compressor traffic are approximate "
+  "(512 or 4096 for history, 256 for observations -- see arm names). Token counts for compressor traffic are approximate "
   "(~4 chars/token) since the compressor runs outside the agent's metered path.")
 W("")
 W("| Arm | Compressor | Compression calls | Text in (approx tok) | Text out (approx tok) | Compression ratio |")
@@ -196,7 +203,7 @@ for tag, split, desc, comp, a, g in rows:
     W("| Task | Result | Reward | Iters | In tok | Out tok | Compress calls | Termination |")
     W("|---|---|---|---|---|---|---|---|")
     for x in a["tasks"]:
-        cap = " (capped)" if x['iters'] >= 12 else ""
+        cap = " (capped)" if x['iters'] >= 30 else ""
         W(f"| `{x['task_id']}` | {'PASS' if x['success'] else 'FAIL'} | {x['reward']:.2f} | {x['iters']}{cap} | "
           f"{x['in_tok']:,} | {x['out_tok']:,} | {x['comp_calls']} | {x['reason']} |")
     W("")

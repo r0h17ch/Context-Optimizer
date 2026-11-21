@@ -131,17 +131,6 @@ Like all jazz songs on Spotify that have more than 10 likes.
 
 A:
 # Many Spotify write APIs (like, follow, etc.) need an access_token from login.
-# Step 1: Get my Spotify credentials from supervisor.
-account_info = apis.supervisor.show_account()
-print(account_info)
-
-
-USER:
-{"first_name": "Erica", "last_name": "Wilson", "username": "eri_powe", ...}
-
-
-A:
-# Step 2: Get my Spotify password.
 # Step 1: Get my Spotify password.
 passwords = apis.supervisor.show_account_passwords()
 spotify_pass = next(p["password"] for p in passwords if p["account_name"] == "spotify")
@@ -153,8 +142,6 @@ dummy_spotify_pass
 
 
 A:
-# Step 3: Login to Spotify to get the access_token needed for write operations.
-login_result = apis.spotify.login(username="eri_powe", password=spotify_pass)
 # Step 2: Login to Spotify to get the access_token needed for write operations.
 # Note: The login API for most apps expects the user's email as the username. My email is provided in the task instructions.
 login_result = apis.spotify.login(username="{{ supervisor.email }}", password=spotify_pass)
@@ -167,7 +154,6 @@ eyJ...token...
 
 
 A:
-# Step 4: Search for jazz songs (use page_limit=20 and iterate pages to get all results).
 # Step 3: Search for jazz songs (use page_limit=20 and iterate pages to get all results).
 all_songs = []
 page = 0

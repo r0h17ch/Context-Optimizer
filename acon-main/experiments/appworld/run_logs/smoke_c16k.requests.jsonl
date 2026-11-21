@@ -1,0 +1,4 @@
+{"ts": 1684411200.0, "model": "qwen2.5-14b-c16k", "task": "07b42fd_1", "prompt_tokens": 2212, "completion_tokens": 48, "seconds": 0.0}
+{"ts": 1684411200.0, "model": "qwen2.5-14b-c16k", "task": "07b42fd_1", "prompt_tokens": 2274, "completion_tokens": 246, "seconds": 0.0}
+{"ts": 1684411200.0, "model": "qwen2.5-14b-c16k", "task": "07b42fd_1", "prompt_tokens": 2638, "completion_tokens": 199, "seconds": 0.0}
+{"ts": 1684411200.0, "model": "qwen2.5-14b-c16k", "task": "07b42fd_1", "prompt_tokens": 2950, "completion_tokens": 196, "seconds": 0.0}

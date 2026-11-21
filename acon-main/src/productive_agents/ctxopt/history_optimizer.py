@@ -14,6 +14,7 @@ except ImportError:
         print(text)
 
 from .base import BaseContextOptimizer
+from .state_ledger import StateLedger
 
 
 class HistoryOptimizer(BaseContextOptimizer):
@@ -79,7 +80,13 @@ class HistoryOptimizer(BaseContextOptimizer):
             )
 
         self.use_llmlingua = config.get("use_llmlingua", False)
-        
+
+        # Append a verbatim state ledger (extracted without an LLM) to every summary.
+        self.state_ledger = (
+            StateLedger(config.get("state_ledger_sections", StateLedger.SECTIONS))
+            if config.get("state_ledger", False) else None
+        )
+
     def process(
         self, 
         task: str, 
@@ -118,14 +125,21 @@ class HistoryOptimizer(BaseContextOptimizer):
         else:
             raw_response = self.llm.generate(prompt, temperature=self.temperature)
             raw_response = raw_response.strip()
-        
+
         # Save interaction to history
         self.add_to_history(self.system_message, prompt, raw_response, prompt_args)
-        
+
         # Parse the response
         keyword = "# History Summary"
         summary = self.parse_output(raw_response, keyword)
-        
+
+        if self.state_ledger is not None:
+            self.state_ledger.update(raw_history)
+            ledger_text = self.state_ledger.render()
+            if ledger_text:
+                summary = f"{summary.rstrip()}\n\n{ledger_text}"
+            prompt_args["state_ledger"] = ledger_text  # logged with this call for analysis
+
         if self.debug_mode:
             cprint("History Compression", 'red')
             cprint(raw_response, 'blue')
