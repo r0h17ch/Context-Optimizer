@@ -54,6 +54,42 @@ Mechanism write-up: `acon-main/experiments/appworld/CASE_STUDY_LEDGER.md`.
   (`run_logs/queue8.sh`, tag `acon_hist_ledger_err_c16k`, 168 tasks, MEMCAP 40 GB, inhibitor +
   notice running). Expected done ≈ Saturday 21 Nov early morning. M2 still busy (harshith,
   `train.py --dataset prostate`), left alone.
+- **2026-11-21 test result, errors-only ledger: did NOT generalize.** test_normal, 167 tasks
+  common (task `325d6ec_2` crashed with MemoryError even at 40 GB): errors ledger 81/167 = **48.5%**
+  vs paper@512 45.5% (+28/−23, p = 0.58), vs full ledger 52.7% (+23/−30, p = 0.41), vs none 61.7%
+  (+27/−49, p = 0.015), vs paper@4096 70.1% (+12/−48, p = 3e-6). LLM summary admits failures
+  20% (paper@512 on test: 26%). Second dev→test drop (dev 66.1%). **No fix works on test yet.**
+  The robust, quotable result remains the threshold brittleness of D.7.
+- **2026-11-22 00:03: threshold sweep started on M1** (`run_logs/queue9.sh`, test_normal, D.7
+  history only, thresholds 2048 then 1024; tags `acon_hist_paper_t2048_c16k`,
+  `acon_hist_paper_t1024_c16k`). Expected done ≈ Monday 23 Nov early morning.
+- **2026-11-22 03:57: M2 free (harshith's training ended), queue started on M2**
+  (`run_logs/queue_m2a.sh`, test_normal @512): naive D.5 (`acon_hist_c16k`), then D.7 with a 14B
+  compressor (`acon_hist_paper_c14b_c16k`, config `ollama_qwen2.5_14b_c16k_history_paperutco.yaml`,
+  same Ollama model as the agent so no extra VRAM). Code on M2 verified identical (md5) to local.
+  M2 notice is on DISPLAY=:2 (iiitdmk session); idle-delay set to 0 and lock off, **restore
+  900 / true afterwards**. Analysis note: in the c14b arm agent and compressor requests both have
+  "14b" in the model name, so split them by request content/role, not by model name.
+  **Changed 04:10:** the c14b arm moved to M1 (`run_logs/queue10.sh` waits for queue9); M2's
+  `run_logs/stop_m2a_after_naive.sh` kills queue_m2a once the naive arm is DONE, so M2 runs only
+  naive. Pull c14b results from M1, naive results from M2. Expected: M1 sweep ≈ Sun evening,
+  naive on M2 ≈ Sun night, c14b on M1 ≈ Mon morning.
+- **2026-11-22 15:00:** threshold 2048 done (test, 167 common tasks, `325d6ec_2` excluded):
+  **66.5%** (111/167) vs @512 45.5% (+47/−12, p = 5e-6), vs @4096 70.1% (+17/−23, p = 0.43),
+  vs none 61.7% (+41/−33, p = 0.42). Break point lies between 512 and 2048; 1024 running.
+  Token numbers: recompute with all request logs (my quick script read only one file per arm).
+  Task `325d6ec_2` hung for 6 h in the 1024 arm (100% CPU, earlier MemoryError in the errors-ledger
+  arm); killed (rc=143, counts as failure). Added `run_logs/task_timeout.sh` on both machines
+  (kills any task > 90 min). **Exclude `325d6ec_2` from all test comparisons** (n = 167).
+- **2026-11-22 16:20: naive D.5 @512 on test (M2) — changes the story.** 82/167 = **49.1%**,
+  vs D.7@512 45.5% (+31/−25, p = 0.50), vs none 61.7% (+25/−46, p = 0.017), vs D.7@4096 70.1%
+  (+12/−47, p = 5e-6). Naive summaries admit failures 85% on test (D.7: 26%), yet it collapses too.
+  On dev naive@512 was 69.6% (= none); that did not hold on test. **So on held-out data the
+  collapse at 512 is caused by compression frequency, not by D.7's guideline; the "D.7 deletes
+  failures" mechanism is a dev-only finding and must not be claimed as the cause.** Third dev→test
+  reversal (after full ledger and errors ledger): the 56-task dev split is unreliable for selection.
+- **2026-11-22 17:44:** c14b arm moved back to M2 (`run_logs/queue_m2b.sh`, idle since 16:20);
+  M1 `queue10.sh` cancelled. M1 runs only the 1024 arm (≈ done 00:30 Mon); c14b on M2 ≈ Mon morning.
 - **Next step (agreed direction):** intervention test of the mechanism on dev, then test:
   (a) errors-only ledger vs values-only ledger, (b) D.7 plus D.5's line "Include key info from
   errors or failed attempts to prevent repeated mistakes". If failure preservation is causal,

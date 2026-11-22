@@ -1,0 +1,15 @@
+# Threshold sweep point (1024) for the guideline x threshold comparison.
+# ACON with the paper's own optimized AppWorld guidelines (UTCO): history = Prompt D.7,
+# observation = Prompt D.10, copied verbatim from the ACON paper appendix.
+# Same compressor and num_ctx as the naive *_c16k arms; history threshold 1024 here, so the
+# guideline is the only change.
+type: "history"
+model: "ollama/qwen2.5-7b-c16k"
+compressor_type: "full"
+prompts:
+  prompt_system: "system_prompt"
+  prompt_history_user: "prompt_history_paper_d7_utco"
+history_summarization_threshold: 1024
+preserve_last_k_turns: 1
+history_summary_rule: "reset"
+temperature: 0.0

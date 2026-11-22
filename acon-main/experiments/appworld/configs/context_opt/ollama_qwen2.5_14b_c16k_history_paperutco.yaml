@@ -1,0 +1,15 @@
+# Compressor-size control: identical to the paperutco arm but the compressor is the 14B agent model.
+# ACON with the paper's own optimized AppWorld guidelines (UTCO): history = Prompt D.7,
+# observation = Prompt D.10, copied verbatim from the ACON paper appendix.
+# Same compressor, num_ctx and thresholds (512/256) as the naive *_c16k arms, so the
+# guideline is the only change.
+type: "history"
+model: "ollama/qwen2.5-14b-c16k"
+compressor_type: "full"
+prompts:
+  prompt_system: "system_prompt"
+  prompt_history_user: "prompt_history_paper_d7_utco"
+history_summarization_threshold: 512
+preserve_last_k_turns: 1
+history_summary_rule: "reset"
+temperature: 0.0
