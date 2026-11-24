@@ -1,0 +1,13 @@
+# Threshold sweep point (1024), unoptimised guideline (D.5), for the guideline x threshold comparison.
+# ACON history optimizer — compressor qwen2.5:7b
+# Compressor served with num_ctx 16384 (Ollama variant qwen2.5-7b-c16k; default 4096 truncated prompts).
+type: "history"
+model: "ollama/qwen2.5-7b-c16k"
+compressor_type: "full"
+prompts:
+  prompt_system: "system_prompt"
+  prompt_history_user: "prompt_history_v2"
+history_summarization_threshold: 1024
+preserve_last_k_turns: 1
+history_summary_rule: "reset"
+temperature: 0.0

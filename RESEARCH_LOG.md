@@ -11,6 +11,24 @@ Mechanism write-up: `acon-main/experiments/appworld/CASE_STUDY_LEDGER.md`.
 
 ## 1. Current state (2026-11-04)
 
+- **2026-11-24 CRITICAL: all "success" numbers above are COMPLETION rates, not correctness.**
+  `results.json` "success" = `world.task_completed()` = the agent called
+  `apis.supervisor.complete_task()` within 30 steps (see `src/productive_agents/env/appworld/env.py`
+  `_check_task_completion`; the `world.evaluate()` line is commented out). The official metric needs
+  `appworld evaluate <experiment_name> <split>` (repo README), which we never ran until today.
+  Ran it for every arm (M2 task states merged into M1's `experiments/outputs` first; evaluation JSONs
+  copied to the scratchpad `evals/`). **Official task-goal completion (TGC), test_normal, 168 tasks:**
+  none 9.5 (16) | D.7@4096 10.1 (17) | D.7@2048 5.4 (9) | D.7@1024 3.0 (5) | D.7@512 5.4 (9), repeat 5.4 |
+  D.5@4096 9.5 (16) | D.5@2048 6.5 (11) | D.5@1024 3.6 (6) | D.5@512 4.2 (7) | D.7@512 14B comp 2.4 (4) |
+  D.7@512+ledger 3.0 (5) | +errors ledger 5.4 (9). Every correct task was also declared complete.
+  McNemar on correctness: D.7 4096 vs 512 +10/−2 p=0.039; D.5 4096 vs 512 +10/−1 p=0.012;
+  D.7@4096 vs none +8/−7 p=1. Dev TGC 3.5–10.5% for all arms; train 1–6%.
+  **Meaning:** qwen2.5-14B (Q4) gets only ~10% of AppWorld test tasks right (ACON paper, gpt-4.1: ~56%).
+  The threshold effect survives on correctness (4096 > 512, p<0.05 for both guidelines) but on very
+  few tasks; "ACON beats no compression" does NOT hold on correctness. The final report (Nov 23) and
+  all earlier tables label completion as "solved" — must be corrected. Any paper needs a stronger agent.
+
+
 - **All experiments are complete**, including the held-out test set (4 arms × 168 tasks).
   Both lab machines are idle; nothing is queued.
 - **Main contribution:** ACON's optimized history guideline (paper Prompt D.7) is
@@ -90,6 +108,50 @@ Mechanism write-up: `acon-main/experiments/appworld/CASE_STUDY_LEDGER.md`.
   reversal (after full ledger and errors ledger): the 56-task dev split is unreliable for selection.
 - **2026-11-22 17:44:** c14b arm moved back to M2 (`run_logs/queue_m2b.sh`, idle since 16:20);
   M1 `queue10.sh` cancelled. M1 runs only the 1024 arm (≈ done 00:30 Mon); c14b on M2 ≈ Mon morning.
+- **2026-11-23 FINAL TEST TABLE (test_normal, 167 common tasks, `325d6ec_2` excluded).** All
+  experiments done; both machines idle and cleaned (notices removed, M2 idle-delay 900 / lock true).
+  | Arm | Solved | Rate | Steps | Cap | Peak | Agent tok/task | All-LLM tok/task | Compr./task | LLM s/task |
+  |---|---|---|---|---|---|---|---|---|---|
+  | none | 103 | 61.7 | 18.8 | 64 | 8,806 | 116.3k | 116.3k | 0 | 199 |
+  | D.7@4096 | 117 | 70.1 | 18.3 | 50 | 6,584 | 80.4k | 84.3k | 0.7 | 181 |
+  | D.7@2048 | 111 | 66.5 | 18.6 | 56 | 5,013 | 66.0k | 71.5k | 1.9 | 178 |
+  | D.7@1024 | 91 | 54.5 | 21.2 | 76 | 4,237 | 64.4k | 72.8k | 4.5 | 207 |
+  | D.7@512 | 76 | 45.5 | 22.7 | 91 | 3,768 | 63.6k | 74.8k | 9.0 | 255 |
+  | D.5 (naive)@512 | 82 | 49.1 | 21.6 | 85 | 4,096 | 62.2k | 72.7k | 8.9 | 253 |
+  | D.7@512, 14B compressor | 78 | 46.7 | 22.4 | 89 | n/a | n/a | 75.0k | 9.4 | 281 |
+  | D.7@512 + ledger | 88 | 52.7 | 21.7 | 79 | 4,173 | 67.1k | 89.0k | 15.6 | 332 |
+  | D.7@512 + errors ledger | 81 | 48.5 | 22.7 | 86 | 4,025 | 65.0k | 79.3k | 11.4 | 274 |
+  McNemar: 1024 vs 512 +34/−19 p=0.053; 1024 vs 2048 +15/−35 p=0.0066; 1024 vs 4096 p=0.00086;
+  1024 vs none +30/−42 p=0.19; c14b vs D.7@512 +25/−23 p=0.89; c14b vs none p=0.0041; c14b vs D.5@512
+  p=0.69. Paired bootstrap 95% CI (2,000 resamples, seed 0): 4096−512 +24.6 [+16.2,+32.9]; 4096−none
+  +8.4 [+0.0,+17.4]; 512−none −16.2 [−25.7,−6.6]; D.5−D.7 @512 +3.6 [−5.4,+12.0]; c14b−7b +1.2
+  [−7.2,+9.6]; ledger−512 +7.2 [−1.8,+16.2]. n=167 McNemar: 4096 vs 512 +53/−12 p=2.8e-7; 512 vs none +21/−48 p=0.0016; ledger vs 512 +33/−21 p=0.13.
+  **Findings:** monotone threshold curve; neither guideline, compressor size nor ledger rescues 512;
+  compressing more often does not even save tokens (512 uses more all-LLM tokens than 2048, via
+  longer trajectories). The ledger lengthens summaries and so triggers more compressions (15.6/task).
+  Note: 168-task numbers in §4.6 differ slightly (n=168); use these n=167 numbers in reports.
+- **2026-11-23 09:21: extra test runs started (machines were idle after the final report).**
+  M1 `run_logs/queue11.sh`: naive D.5 @4096 (`acon_hist_t4096_c16k`) then @2048 (`acon_hist_t2048_c16k`).
+  M2 `run_logs/queue_m2c.sh`: naive D.5 @1024 (`acon_hist_t1024_c16k`) then a repeat of D.7 @512
+  (`acon_hist_paper_rep2_c16k`, test split) for run-to-run stability. Purpose: full guideline ×
+  threshold curve on test (is the guideline irrelevant at every threshold?) and noise check.
+  Watchdogs `run_logs/task_timeout_queue11.sh` / `task_timeout_queue_m2c.sh` (90 min per task).
+  M2 idle-delay 0 / lock off again — **restore 900 / true afterwards**. Expected done ≈ Tue 24 Nov.
+  Report `final_report.tex/.pdf` (repo root) does not include these yet.
+- **2026-11-24 GUIDELINE × THRESHOLD GRID ON TEST (all done; machines idle and cleaned, M2 settings restored).**
+  165 tasks common to all 10 test arms (excluded: `325d6ec_2`; `325d6ec_3` killed by watchdog in
+  D.5@2048; `90adc3f_2` MemoryError in D.5@4096). Success % (cap-hit %, compressions/task, all-LLM tok/task):
+  | T_hist | D.7 (ACON optimised) | D.5 (unoptimised) | D.5 − D.7 (McNemar, bootstrap CI) |
+  |---|---|---|---|
+  | 4096 | 70.3 (29.7, 0.7, 83.9k) | 72.7 (27.3, 0.6, 79.7k) | +15/−11 p=0.56, +2.4 [−3.0,+8.5] |
+  | 2048 | 67.3 (32.7, 1.9, 70.9k) | 70.3 (29.7, 1.9, 69.6k) | +21/−16 p=0.51, +3.0 [−4.2,+10.3] |
+  | 1024 | 54.5 (45.5, 4.5, 72.8k) | 61.8 (38.2, 4.0, 68.4k) | +29/−17 p=0.10, +7.3 [−0.6,+15.2] |
+  | 512  | 46.1 (53.9, 9.0, 74.5k) | 49.1 (50.9, 9.0, 72.7k) | +30/−25 p=0.59, +3.0 [−5.5,+12.1] |
+  None 61.8 (38.2). D.7@512 repeat (M2) 46.7, agrees on 164/165 tasks → runs are stable.
+  D.5@4096 vs none +40/−22 p=0.03, +10.9 [+1.8,+20.0]; D.5@4096 vs D.5@512 p=2.7e-7; D.5@1024 vs @512 p=0.0046.
+  **Findings:** same monotone threshold curve for both guidelines; the optimised guideline is never
+  better than the unoptimised one at any threshold (D.5 ≥ D.7 everywhere, n.s.). Compression frequency,
+  not the guideline, decides success. Final report (submitted version) predates this grid.
 - **Next step (agreed direction):** intervention test of the mechanism on dev, then test:
   (a) errors-only ledger vs values-only ledger, (b) D.7 plus D.5's line "Include key info from
   errors or failed attempts to prevent repeated mistakes". If failure preservation is causal,
